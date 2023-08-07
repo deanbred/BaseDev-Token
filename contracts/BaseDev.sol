@@ -1,9 +1,8 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 /*
-    BaseDev DEX
-    Website: https://basedev.tech/
-    Discord: 
-    X: @basedev777
+*  BaseDev DEX
+*  Web: https://basedev.tech/
+*  X: @basedev777
 */
 pragma solidity = 0.8.20;
 
@@ -627,13 +626,31 @@ contract BaseDev is ERC20, Ownable, ILiquidityManageable {
         ISwapV2Factory factory = ISwapV2Factory(router.factory());
         swapPairToken = router.WETH();
 
+        isLiquidityManager[address(router)] = true;
+        isWhitelistedFactory[address(factory)] = true;        
+
+        address pair = factory.createPair(address(this), swapPairToken);
+        address feesVault = ISwapV2Pair(pair).fees();
+        _isExcludedFromMaxWallet[feesVault] = true;
+        isExcludedFromFee[feesVault] = true;
+        _isLpPair[pair] = true;
+        maxWalletEnabled = true;      
+
+        farmsFeeRecipient = address(_farms);
+        stakingFeeRecipient = address(_staking);
+        treasuryFeeRecipient = address(_treasury);
+
+        isExcludedFromFee[farmsFeeRecipient] = true;
+        isExcludedFromFee[stakingFeeRecipient] = true;
+        isExcludedFromFee[treasuryFeeRecipient] = true;             
+
         isExcludedFromFee[owner()] = true;
         isExcludedFromFee[address(this)] = true;
         isExcludedFromFee[DEAD] = true;
 
         _isExcludedFromMaxWallet[owner()] = true;
         _isExcludedFromMaxWallet[address(this)] = true;
-        _isExcludedFromMaxWallet[DEAD] = true;
+        _isExcludedFromMaxWallet[DEAD] = true;     
 
         burnBuyFee = 0;
         farmsBuyFee = 111;
@@ -646,24 +663,6 @@ contract BaseDev is ERC20, Ownable, ILiquidityManageable {
         stakingSellFee = 111;
         treasurySellFee = 111;
         setSellFees(burnSellFee, farmsSellFee, stakingSellFee, treasurySellFee);
-
-        farmsFeeRecipient = address(_farms);
-        stakingFeeRecipient = address(_staking);
-        treasuryFeeRecipient = address(_treasury);
-
-        isExcludedFromFee[farmsFeeRecipient] = true;
-        isExcludedFromFee[stakingFeeRecipient] = true;
-        isExcludedFromFee[treasuryFeeRecipient] = true;
-
-        isLiquidityManager[address(router)] = true;
-        isWhitelistedFactory[address(factory)] = true;
-
-        address pair = factory.createPair(address(this), swapPairToken);
-        address feesVault = ISwapV2Pair(pair).fees();
-        _isExcludedFromMaxWallet[feesVault] = true;
-        isExcludedFromFee[feesVault] = true;
-        _isLpPair[pair] = true;
-        maxWalletEnabled = true;
 
         _mint(owner(), 7000000000 * 10 ** decimals());
         _mint(farmsFeeRecipient, 222222222 * 10 ** decimals());
@@ -1247,8 +1246,6 @@ contract BaseDev is ERC20, Ownable, ILiquidityManageable {
         swappingFeesEnabled = true;
     }
 }
-
-
 
 
 /*     function openTrading() external onlyOwner() {
