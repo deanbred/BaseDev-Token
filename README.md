@@ -1,6 +1,4 @@
-# MEV Resistant ERC20  
-
-This token was developed to prevent MEV sandwich attacks.
+# BaseDev ERC20 Token on the new base blockchain 
 
 Try running some of the following tasks:
 
