@@ -4,7 +4,7 @@
 *  Web: https://basedev.tech/
 *  X: @basedev777
 */
-pragma solidity = 0.8.20;
+pragma solidity = 0.8.18;
 
 abstract contract Context {
     function _msgSender() internal view virtual returns (address) {
@@ -54,7 +54,7 @@ abstract contract Ownable is Context {
     }
 }
 
-interface ISwapV2Router01 {
+interface ISwapRouter01 {
     function factory() external view returns (address);
 
     function WETH() external view returns (address);
@@ -183,7 +183,7 @@ interface ISwapV2Router01 {
         returns (address pair);
 }
 
-interface ISwapV2Factory {
+interface ISwapFactory {
     function allPairsLength() external view returns (uint256);
 
     function isPair(address pair) external view returns (bool);
@@ -227,7 +227,7 @@ interface ISwapV2Factory {
     function isPaused() external view returns (bool);
 }
 
-interface ISwapV2Pair {
+interface ISwapPair {
     function factory() external view returns (address);
 
     function fees() external view returns (address);
@@ -561,9 +561,10 @@ contract BaseDev is ERC20, Ownable, ILiquidityManageable {
     bool public tradingEnabled;
     uint256 public tradingEnabledTimestamp = 0;
 
-    ISwapV2Router01 public swapFeesRouter;
+    ISwapRouter01 public swapFeesRouter;
     IFeeDiscountOracle public feeDiscountOracle;
     address public swapPairToken;
+    address public lpPair;
     bool public swappingFeesEnabled;
     bool public isSwappingFees;
     uint256 public swapFeesAtAmount;
@@ -622,19 +623,15 @@ contract BaseDev is ERC20, Ownable, ILiquidityManageable {
         address _staking,
         address _treasury
     ) ERC20("BaseDev", "BASEDEV") {
-        ISwapV2Router01 router = ISwapV2Router01(_router);
-        ISwapV2Factory factory = ISwapV2Factory(router.factory());
+        ISwapRouter01 router = ISwapRouter01(_router);
+        ISwapFactory factory = ISwapFactory(router.factory());
+        swapFeesRouter = router;
         swapPairToken = router.WETH();
+        lpPair = factory.createPair(address(this), swapPairToken);
 
         isLiquidityManager[address(router)] = true;
+        _isLiquidityManagementPhase = false;
         isWhitelistedFactory[address(factory)] = true;        
-
-        address pair = factory.createPair(address(this), swapPairToken);
-        address feesVault = ISwapV2Pair(pair).fees();
-        _isExcludedFromMaxWallet[feesVault] = true;
-        isExcludedFromFee[feesVault] = true;
-        _isLpPair[pair] = true;
-        maxWalletEnabled = true;      
 
         farmsFeeRecipient = address(_farms);
         stakingFeeRecipient = address(_staking);
@@ -651,6 +648,11 @@ contract BaseDev is ERC20, Ownable, ILiquidityManageable {
         _isExcludedFromMaxWallet[owner()] = true;
         _isExcludedFromMaxWallet[address(this)] = true;
         _isExcludedFromMaxWallet[DEAD] = true;     
+
+        address feesVault = ISwapPair(lpPair).fees();
+        _isExcludedFromMaxWallet[feesVault] = true;
+        isExcludedFromFee[feesVault] = true;
+        _isLpPair[lpPair] = true;
 
         burnBuyFee = 0;
         farmsBuyFee = 111;
@@ -669,10 +671,10 @@ contract BaseDev is ERC20, Ownable, ILiquidityManageable {
         _mint(stakingFeeRecipient, 222222222 * 10 ** decimals());
         _mint(treasuryFeeRecipient, 333333333 * 10 ** decimals());
 
-        swapFeesRouter = router;
         swapFeesAtAmount = (totalSupply() * 3) / 1e5;
         maxSwapFeesAmount = (totalSupply() * 4) / 1e5;
         maxWalletAmount = (totalSupply() * 49) / 1e4;
+        maxWalletEnabled = true;      
     }
 
     modifier onlyLiquidityManager() {
@@ -707,7 +709,7 @@ contract BaseDev is ERC20, Ownable, ILiquidityManageable {
         if (factory == address(0)) return false;
 
         bool isVerifiedPair = isWhitelistedFactory[factory] &&
-            ISwapV2Factory(factory).isPair(_pair);
+            ISwapFactory(factory).isPair(_pair);
 
         (success, data) = _pair.staticcall(abi.encodeWithSignature("token0()"));
         if (!success) return false;
@@ -1220,7 +1222,7 @@ contract BaseDev is ERC20, Ownable, ILiquidityManageable {
     }
 
     function setSwapFeesRouter(address _swapFeesRouter) public onlyOwner {
-        swapFeesRouter = ISwapV2Router01(_swapFeesRouter);
+        swapFeesRouter = ISwapRouter01(_swapFeesRouter);
     }    
 
     function setTradingEnabledTimestamp(uint256 _timestamp) public onlyOwner {
@@ -1245,16 +1247,6 @@ contract BaseDev is ERC20, Ownable, ILiquidityManageable {
 
         swappingFeesEnabled = true;
     }
-}
-
-
-/*     function openTrading() external onlyOwner() {
-        require(!tradingOpen,"trading already open");
-        uniswapV2Router = IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
-        _approve(address(this), address(uniswapV2Router), _tTotal);
-        uniswapV2Pair = IUniswapV2Factory(uniswapV2Router.factory()).createPair(address(this), uniswapV2Router.WETH());
-        IERC20(uniswapV2Pair).approve(address(uniswapV2Router), type(uint).max);
-        tradingOpen = true;
-    }
+    
     receive() external payable {}
-} */
+}
