@@ -1,741 +1,325 @@
 // SPDX-License-Identifier: MIT
-/*
- *  Telegram: https://t.me/OnlyFrens_base
- *  Twitter: @Only_Frens_
- *  Web: https://onlyfrens.tech/
- *  Email: team@onlyfrens.tech
- */
+pragma solidity ^0.8.20;
 
-pragma solidity ^0.8.22;
+/// @notice Simple single owner authorization mixin.
+/// @author Solmate (https://github.com/transmissions11/solmate/blob/main/src/auth/Owned.sol)
+abstract contract Owned {
+  /*//////////////////////////////////////////////////////////////
+                                 EVENTS
+    //////////////////////////////////////////////////////////////*/
 
-/**
- * @dev Standard ERC20 Errors
- * Interface of the https://eips.ethereum.org/EIPS/eip-6093[ERC-6093] custom errors for ERC20 tokens.
- */
-interface IERC20Errors {
-  /**
-   * @dev Indicates an error related to the current `balance` of a `sender`. Used in transfers.
-   * @param sender Address whose tokens are being transferred.
-   * @param balance Current balance for the interacting account.
-   * @param needed Minimum amount required to perform a transfer.
-   */
-  error ERC20InsufficientBalance(
-    address sender,
-    uint256 balance,
-    uint256 needed
-  );
+  event OwnershipTransferred(address indexed user, address indexed newOwner);
 
-  /**
-   * @dev Indicates a failure with the token `sender`. Used in transfers.
-   * @param sender Address whose tokens are being transferred.
-   */
-  error ERC20InvalidSender(address sender);
+  /*//////////////////////////////////////////////////////////////
+                            OWNERSHIP STORAGE
+    //////////////////////////////////////////////////////////////*/
 
-  /**
-   * @dev Indicates a failure with the token `receiver`. Used in transfers.
-   * @param receiver Address to which tokens are being transferred.
-   */
-  error ERC20InvalidReceiver(address receiver);
+  address public owner;
 
-  /**
-   * @dev Indicates a failure with the `spender`’s `allowance`. Used in transfers.
-   * @param spender Address that may be allowed to operate on tokens without being their owner.
-   * @param allowance Amount of tokens a `spender` is allowed to operate with.
-   * @param needed Minimum amount required to perform a transfer.
-   */
-  error ERC20InsufficientAllowance(
-    address spender,
-    uint256 allowance,
-    uint256 needed
-  );
+  modifier onlyOwner() virtual {
+    require(msg.sender == owner, "UNAUTHORIZED");
 
-  /**
-   * @dev Indicates a failure with the `approver` of a token to be approved. Used in approvals.
-   * @param approver Address initiating an approval operation.
-   */
-  error ERC20InvalidApprover(address approver);
-
-  /**
-   * @dev Indicates a failure with the `spender` to be approved. Used in approvals.
-   * @param spender Address that may be allowed to operate on tokens without being their owner.
-   */
-  error ERC20InvalidSpender(address spender);
-}
-
-/**
- * @dev Interface of the ERC20 standard as defined in the EIP.
- */
-interface IERC20 {
-  /**
-   * @dev Emitted when `value` tokens are moved from one account (`from`) to
-   * another (`to`).
-   *
-   * Note that `value` may be zero.
-   */
-  event Transfer(address indexed from, address indexed to, uint256 value);
-
-  /**
-   * @dev Emitted when the allowance of a `spender` for an `owner` is set by
-   * a call to {approve}. `value` is the new allowance.
-   */
-  event Approval(address indexed owner, address indexed spender, uint256 value);
-
-  /**
-   * @dev Returns the value of tokens in existence.
-   */
-  function totalSupply() external view returns (uint256);
-
-  /**
-   * @dev Returns the value of tokens owned by `account`.
-   */
-  function balanceOf(address account) external view returns (uint256);
-
-  /**
-   * @dev Moves a `value` amount of tokens from the caller's account to `to`.
-   *
-   * Returns a boolean value indicating whether the operation succeeded.
-   *
-   * Emits a {Transfer} event.
-   */
-  function transfer(address to, uint256 value) external returns (bool);
-
-  /**
-   * @dev Returns the remaining number of tokens that `spender` will be
-   * allowed to spend on behalf of `owner` through {transferFrom}. This is
-   * zero by default.
-   *
-   * This value changes when {approve} or {transferFrom} are called.
-   */
-  function allowance(
-    address owner,
-    address spender
-  ) external view returns (uint256);
-
-  /**
-   * @dev Sets a `value` amount of tokens as the allowance of `spender` over the
-   * caller's tokens.
-   *
-   * Returns a boolean value indicating whether the operation succeeded.
-   *
-   * IMPORTANT: Beware that changing an allowance with this method brings the risk
-   * that someone may use both the old and the new allowance by unfortunate
-   * transaction ordering. One possible solution to mitigate this race
-   * condition is to first reduce the spender's allowance to 0 and set the
-   * desired value afterwards:
-   * https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729
-   *
-   * Emits an {Approval} event.
-   */
-  function approve(address spender, uint256 value) external returns (bool);
-
-  /**
-   * @dev Moves a `value` amount of tokens from `from` to `to` using the
-   * allowance mechanism. `value` is then deducted from the caller's
-   * allowance.
-   *
-   * Returns a boolean value indicating whether the operation succeeded.
-   *
-   * Emits a {Transfer} event.
-   */
-  function transferFrom(
-    address from,
-    address to,
-    uint256 value
-  ) external returns (bool);
-}
-
-/**
- * @dev Interface for the optional metadata functions from the ERC20 standard.
- */
-interface IERC20Metadata is IERC20 {
-  /**
-   * @dev Returns the name of the token.
-   */
-  function name() external view returns (string memory);
-
-  /**
-   * @dev Returns the symbol of the token.
-   */
-  function symbol() external view returns (string memory);
-
-  /**
-   * @dev Returns the decimals places of the token.
-   */
-  function decimals() external view returns (uint8);
-}
-
-/**
- * @dev Provides information about the current execution context, including the
- * sender of the transaction and its data. While these are generally available
- * via msg.sender and msg.data, they should not be accessed in such a direct
- * manner, since when dealing with meta-transactions the account sending and
- * paying for execution may not be the actual sender (as far as an application
- * is concerned).
- *
- * This contract is only required for intermediate, library-like contracts.
- */
-abstract contract Context {
-  function _msgSender() internal view virtual returns (address) {
-    return msg.sender;
-  }
-
-  function _msgData() internal view virtual returns (bytes calldata) {
-    return msg.data;
-  }
-
-  function _contextSuffixLength() internal view virtual returns (uint256) {
-    return 0;
-  }
-}
-
-/**
- * @dev Contract module which provides a basic access control mechanism, where
- * there is an account (an owner) that can be granted exclusive access to
- * specific functions.
- *
- * The initial owner is set to the address provided by the deployer. This can
- * later be changed with {transferOwnership}.
- *
- * This module is used through inheritance. It will make available the modifier
- * `onlyOwner`, which can be applied to your functions to restrict their use to
- * the owner.
- */
-abstract contract Ownable is Context {
-  address private _owner;
-
-  /**
-   * @dev The caller account is not authorized to perform an operation.
-   */
-  error OwnableUnauthorizedAccount(address account);
-
-  /**
-   * @dev The owner is not a valid owner account. (eg. `address(0)`)
-   */
-  error OwnableInvalidOwner(address owner);
-
-  event OwnershipTransferred(
-    address indexed previousOwner,
-    address indexed newOwner
-  );
-
-  /**
-   * @dev Initializes the contract setting the address provided by the deployer as the initial owner.
-   */
-  constructor(address initialOwner) {
-    if (initialOwner == address(0)) {
-      revert OwnableInvalidOwner(address(0));
-    }
-    _transferOwnership(initialOwner);
-  }
-
-  /**
-   * @dev Throws if called by any account other than the owner.
-   */
-  modifier onlyOwner() {
-    _checkOwner();
     _;
   }
 
-  /**
-   * @dev Returns the address of the current owner.
-   */
-  function owner() public view virtual returns (address) {
-    return _owner;
+  /*//////////////////////////////////////////////////////////////
+                               CONSTRUCTOR
+    //////////////////////////////////////////////////////////////*/
+
+  constructor(address _owner) {
+    owner = _owner;
+
+    emit OwnershipTransferred(address(0), _owner);
   }
 
-  /**
-   * @dev Throws if the sender is not the owner.
-   */
-  function _checkOwner() internal view virtual {
-    if (owner() != _msgSender()) {
-      revert OwnableUnauthorizedAccount(_msgSender());
-    }
-  }
+  /*//////////////////////////////////////////////////////////////
+                             OWNERSHIP LOGIC
+    //////////////////////////////////////////////////////////////*/
 
-  /**
-   * @dev Leaves the contract without owner. It will not be possible to call
-   * `onlyOwner` functions. Can only be called by the current owner.
-   *
-   * NOTE: Renouncing ownership will leave the contract without an owner,
-   * thereby disabling any functionality that is only available to the owner.
-   */
-  function renounceOwnership() public virtual onlyOwner {
-    _transferOwnership(address(0));
-  }
-
-  /**
-   * @dev Transfers ownership of the contract to a new account (`newOwner`).
-   * Can only be called by the current owner.
-   */
   function transferOwnership(address newOwner) public virtual onlyOwner {
-    if (newOwner == address(0)) {
-      revert OwnableInvalidOwner(address(0));
-    }
-    _transferOwnership(newOwner);
-  }
+    owner = newOwner;
 
-  /**
-   * @dev Transfers ownership of the contract to a new account (`newOwner`).
-   * Internal function without access restriction.
-   */
-  function _transferOwnership(address newOwner) internal virtual {
-    address oldOwner = _owner;
-    _owner = newOwner;
-    emit OwnershipTransferred(oldOwner, newOwner);
+    emit OwnershipTransferred(msg.sender, newOwner);
   }
 }
 
-/**
- * @dev Implementation of the {IERC20} interface.
- *
- * This implementation is agnostic to the way tokens are created. This means
- * that a supply mechanism has to be added in a derived contract using {_mint}.
- *
- * TIP: For a detailed writeup see our guide
- * https://forum.openzeppelin.com/t/how-to-implement-erc20-supply-mechanisms/226[How
- * to implement supply mechanisms].
- *
- * The default value of {decimals} is 18. To change this, you should override
- * this function so it returns a different value.
- *
- * We have followed general OpenZeppelin Contracts guidelines: functions revert
- * instead returning `false` on failure. This behavior is nonetheless
- * conventional and does not conflict with the expectations of ERC20
- * applications.
- *
- * Additionally, an {Approval} event is emitted on calls to {transferFrom}.
- * This allows applications to reconstruct the allowance for all accounts just
- * by listening to said events. Other implementations of the EIP may not emit
- * these events, as it isn't required by the specification.
- */
-abstract contract ERC20 is Context, IERC20, IERC20Metadata, IERC20Errors {
-  mapping(address account => uint256) private _balances;
+/// @notice Modern and gas efficient ERC20 + EIP-2612 implementation.
+/// @author Solmate (https://github.com/transmissions11/solmate/blob/main/src/tokens/ERC20.sol)
+/// @dev Do not manually set balances without updating totalSupply, as the sum of all user balances must not exceed it.
+abstract contract ERC20 {
+  /*//////////////////////////////////////////////////////////////
+                                 EVENTS
+    //////////////////////////////////////////////////////////////*/
 
-  mapping(address account => mapping(address spender => uint256))
-    private _allowances;
+  event Transfer(address indexed from, address indexed to, uint256 amount);
 
-  uint256 private _totalSupply;
+  event Approval(
+    address indexed owner,
+    address indexed spender,
+    uint256 amount
+  );
 
-  string private _name;
-  string private _symbol;
+  /*//////////////////////////////////////////////////////////////
+                            METADATA STORAGE
+    //////////////////////////////////////////////////////////////*/
 
-  /**
-   * @dev Sets the values for {name} and {symbol}.
-   *
-   * All two of these values are immutable: they can only be set once during
-   * construction.
-   */
-  constructor(string memory name_, string memory symbol_) {
-    _name = name_;
-    _symbol = symbol_;
+  string public name;
+
+  string public symbol;
+
+  uint8 public immutable decimals;
+
+  /*//////////////////////////////////////////////////////////////
+                              ERC20 STORAGE
+    //////////////////////////////////////////////////////////////*/
+
+  uint256 public totalSupply;
+
+  mapping(address => uint256) public balanceOf;
+
+  mapping(address => mapping(address => uint256)) public allowance;
+
+  /*//////////////////////////////////////////////////////////////
+                            EIP-2612 STORAGE
+    //////////////////////////////////////////////////////////////*/
+
+  uint256 internal immutable INITIAL_CHAIN_ID;
+
+  bytes32 internal immutable INITIAL_DOMAIN_SEPARATOR;
+
+  mapping(address => uint256) public nonces;
+
+  /*//////////////////////////////////////////////////////////////
+                               CONSTRUCTOR
+    //////////////////////////////////////////////////////////////*/
+
+  constructor(string memory _name, string memory _symbol, uint8 _decimals) {
+    name = _name;
+    symbol = _symbol;
+    decimals = _decimals;
+
+    INITIAL_CHAIN_ID = block.chainid;
+    INITIAL_DOMAIN_SEPARATOR = computeDomainSeparator();
   }
 
-  /**
-   * @dev Returns the name of the token.
-   */
-  function name() public view virtual returns (string memory) {
-    return _name;
-  }
+  /*//////////////////////////////////////////////////////////////
+                               ERC20 LOGIC
+    //////////////////////////////////////////////////////////////*/
 
-  /**
-   * @dev Returns the symbol of the token, usually a shorter version of the
-   * name.
-   */
-  function symbol() public view virtual returns (string memory) {
-    return _symbol;
-  }
-
-  /**
-   * @dev Returns the number of decimals used to get its user representation.
-   * For example, if `decimals` equals `2`, a balance of `505` tokens should
-   * be displayed to a user as `5.05` (`505 / 10 ** 2`).
-   *
-   * Tokens usually opt for a value of 18, imitating the relationship between
-   * Ether and Wei. This is the default value returned by this function, unless
-   * it's overridden.
-   *
-   * NOTE: This information is only used for _display_ purposes: it in
-   * no way affects any of the arithmetic of the contract, including
-   * {IERC20-balanceOf} and {IERC20-transfer}.
-   */
-  function decimals() public view virtual returns (uint8) {
-    return 18;
-  }
-
-  /**
-   * @dev See {IERC20-totalSupply}.
-   */
-  function totalSupply() public view virtual returns (uint256) {
-    return _totalSupply;
-  }
-
-  /**
-   * @dev See {IERC20-balanceOf}.
-   */
-  function balanceOf(address account) public view virtual returns (uint256) {
-    return _balances[account];
-  }
-
-  /**
-   * @dev See {IERC20-transfer}.
-   *
-   * Requirements:
-   *
-   * - `to` cannot be the zero address.
-   * - the caller must have a balance of at least `value`.
-   */
-  function transfer(address to, uint256 value) public virtual returns (bool) {
-    address owner = _msgSender();
-    _transfer(owner, to, value);
-    return true;
-  }
-
-  /**
-   * @dev See {IERC20-allowance}.
-   */
-  function allowance(
-    address owner,
-    address spender
-  ) public view virtual returns (uint256) {
-    return _allowances[owner][spender];
-  }
-
-  /**
-   * @dev See {IERC20-approve}.
-   *
-   * NOTE: If `value` is the maximum `uint256`, the allowance is not updated on
-   * `transferFrom`. This is semantically equivalent to an infinite approval.
-   *
-   * Requirements:
-   *
-   * - `spender` cannot be the zero address.
-   */
   function approve(
     address spender,
-    uint256 value
+    uint256 amount
   ) public virtual returns (bool) {
-    address owner = _msgSender();
-    _approve(owner, spender, value);
+    allowance[msg.sender][spender] = amount;
+
+    emit Approval(msg.sender, spender, amount);
+
     return true;
   }
 
-  /**
-   * @dev See {IERC20-transferFrom}.
-   *
-   * Emits an {Approval} event indicating the updated allowance. This is not
-   * required by the EIP. See the note at the beginning of {ERC20}.
-   *
-   * NOTE: Does not update the allowance if the current allowance
-   * is the maximum `uint256`.
-   *
-   * Requirements:
-   *
-   * - `from` and `to` cannot be the zero address.
-   * - `from` must have a balance of at least `value`.
-   * - the caller must have allowance for ``from``'s tokens of at least
-   * `value`.
-   */
+  function transfer(address to, uint256 amount) public virtual returns (bool) {
+    balanceOf[msg.sender] -= amount;
+
+    // Cannot overflow because the sum of all user
+    // balances can't exceed the max uint256 value.
+    unchecked {
+      balanceOf[to] += amount;
+    }
+
+    emit Transfer(msg.sender, to, amount);
+
+    return true;
+  }
+
   function transferFrom(
     address from,
     address to,
-    uint256 value
+    uint256 amount
   ) public virtual returns (bool) {
-    address spender = _msgSender();
-    _spendAllowance(from, spender, value);
-    _transfer(from, to, value);
+    uint256 allowed = allowance[from][msg.sender]; // Saves gas for limited approvals.
+
+    if (allowed != type(uint256).max)
+      allowance[from][msg.sender] = allowed - amount;
+
+    balanceOf[from] -= amount;
+
+    // Cannot overflow because the sum of all user
+    // balances can't exceed the max uint256 value.
+    unchecked {
+      balanceOf[to] += amount;
+    }
+
+    emit Transfer(from, to, amount);
+
     return true;
   }
 
-  /**
-   * @dev Moves a `value` amount of tokens from `from` to `to`.
-   *
-   * This internal function is equivalent to {transfer}, and can be used to
-   * e.g. implement automatic token fees, slashing mechanisms, etc.
-   *
-   * Emits a {Transfer} event.
-   *
-   * NOTE: This function is not virtual, {_update} should be overridden instead.
-   */
-  function _transfer(address from, address to, uint256 value) internal {
-    if (from == address(0)) {
-      revert ERC20InvalidSender(address(0));
-    }
-    if (to == address(0)) {
-      revert ERC20InvalidReceiver(address(0));
-    }
-    _update(from, to, value);
-  }
+  /*//////////////////////////////////////////////////////////////
+                             EIP-2612 LOGIC
+    //////////////////////////////////////////////////////////////*/
 
-  /**
-   * @dev Transfers a `value` amount of tokens from `from` to `to`, or alternatively mints (or burns) if `from`
-   * (or `to`) is the zero address. All customizations to transfers, mints, and burns should be done by overriding
-   * this function.
-   *
-   * Emits a {Transfer} event.
-   */
-  function _update(address from, address to, uint256 value) internal virtual {
-    if (from == address(0)) {
-      // Overflow check required: The rest of the code assumes that totalSupply never overflows
-      _totalSupply += value;
-    } else {
-      uint256 fromBalance = _balances[from];
-      if (fromBalance < value) {
-        revert ERC20InsufficientBalance(from, fromBalance, value);
-      }
-      unchecked {
-        // Overflow not possible: value <= fromBalance <= totalSupply.
-        _balances[from] = fromBalance - value;
-      }
-    }
-
-    if (to == address(0)) {
-      unchecked {
-        // Overflow not possible: value <= totalSupply or value <= fromBalance <= totalSupply.
-        _totalSupply -= value;
-      }
-    } else {
-      unchecked {
-        // Overflow not possible: balance + value is at most totalSupply, which we know fits into a uint256.
-        _balances[to] += value;
-      }
-    }
-
-    emit Transfer(from, to, value);
-  }
-
-  /**
-   * @dev Creates a `value` amount of tokens and assigns them to `account`, by transferring it from address(0).
-   * Relies on the `_update` mechanism
-   *
-   * Emits a {Transfer} event with `from` set to the zero address.
-   *
-   * NOTE: This function is not virtual, {_update} should be overridden instead.
-   */
-  function _mint(address account, uint256 value) internal {
-    if (account == address(0)) {
-      revert ERC20InvalidReceiver(address(0));
-    }
-    _update(address(0), account, value);
-  }
-
-  /**
-   * @dev Destroys a `value` amount of tokens from `account`, lowering the total supply.
-   * Relies on the `_update` mechanism.
-   *
-   * Emits a {Transfer} event with `to` set to the zero address.
-   *
-   * NOTE: This function is not virtual, {_update} should be overridden instead
-   */
-  function _burn(address account, uint256 value) internal {
-    if (account == address(0)) {
-      revert ERC20InvalidSender(address(0));
-    }
-    _update(account, address(0), value);
-  }
-
-  /**
-   * @dev Sets `value` as the allowance of `spender` over the `owner` s tokens.
-   *
-   * This internal function is equivalent to `approve`, and can be used to
-   * e.g. set automatic allowances for certain subsystems, etc.
-   *
-   * Emits an {Approval} event.
-   *
-   * Requirements:
-   *
-   * - `owner` cannot be the zero address.
-   * - `spender` cannot be the zero address.
-   *
-   * Overrides to this logic should be done to the variant with an additional `bool emitEvent` argument.
-   */
-  function _approve(address owner, address spender, uint256 value) internal {
-    _approve(owner, spender, value, true);
-  }
-
-  /**
-   * @dev Variant of {_approve} with an optional flag to enable or disable the {Approval} event.
-   *
-   * By default (when calling {_approve}) the flag is set to true. On the other hand, approval changes made by
-   * `_spendAllowance` during the `transferFrom` operation set the flag to false. This saves gas by not emitting any
-   * `Approval` event during `transferFrom` operations.
-   *
-   * Anyone who wishes to continue emitting `Approval` events on the`transferFrom` operation can force the flag to
-   * true using the following override:
-   * ```
-   * function _approve(address owner, address spender, uint256 value, bool) internal virtual override {
-   *     super._approve(owner, spender, value, true);
-   * }
-   * ```
-   *
-   * Requirements are the same as {_approve}.
-   */
-  function _approve(
+  function permit(
     address owner,
     address spender,
     uint256 value,
-    bool emitEvent
-  ) internal virtual {
-    if (owner == address(0)) {
-      revert ERC20InvalidApprover(address(0));
+    uint256 deadline,
+    uint8 v,
+    bytes32 r,
+    bytes32 s
+  ) public virtual {
+    require(deadline >= block.timestamp, "PERMIT_DEADLINE_EXPIRED");
+
+    // Unchecked because the only math done is incrementing
+    // the owner's nonce which cannot realistically overflow.
+    unchecked {
+      address recoveredAddress = ecrecover(
+        keccak256(
+          abi.encodePacked(
+            "\x19\x01",
+            DOMAIN_SEPARATOR(),
+            keccak256(
+              abi.encode(
+                keccak256(
+                  "Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"
+                ),
+                owner,
+                spender,
+                value,
+                nonces[owner]++,
+                deadline
+              )
+            )
+          )
+        ),
+        v,
+        r,
+        s
+      );
+
+      require(
+        recoveredAddress != address(0) && recoveredAddress == owner,
+        "INVALID_SIGNER"
+      );
+
+      allowance[recoveredAddress][spender] = value;
     }
-    if (spender == address(0)) {
-      revert ERC20InvalidSpender(address(0));
-    }
-    _allowances[owner][spender] = value;
-    if (emitEvent) {
-      emit Approval(owner, spender, value);
-    }
+
+    emit Approval(owner, spender, value);
   }
 
-  /**
-   * @dev Updates `owner` s allowance for `spender` based on spent `value`.
-   *
-   * Does not update the allowance value in case of infinite allowance.
-   * Revert if not enough allowance is available.
-   *
-   * Does not emit an {Approval} event.
-   */
-  function _spendAllowance(
-    address owner,
-    address spender,
-    uint256 value
-  ) internal virtual {
-    uint256 currentAllowance = allowance(owner, spender);
-    if (currentAllowance != type(uint256).max) {
-      if (currentAllowance < value) {
-        revert ERC20InsufficientAllowance(spender, currentAllowance, value);
-      }
-      unchecked {
-        _approve(owner, spender, currentAllowance - value, false);
-      }
+  function DOMAIN_SEPARATOR() public view virtual returns (bytes32) {
+    return
+      block.chainid == INITIAL_CHAIN_ID
+        ? INITIAL_DOMAIN_SEPARATOR
+        : computeDomainSeparator();
+  }
+
+  function computeDomainSeparator() internal view virtual returns (bytes32) {
+    return
+      keccak256(
+        abi.encode(
+          keccak256(
+            "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+          ),
+          keccak256(bytes(name)),
+          keccak256("1"),
+          block.chainid,
+          address(this)
+        )
+      );
+  }
+
+  /*//////////////////////////////////////////////////////////////
+                        INTERNAL MINT/BURN LOGIC
+    //////////////////////////////////////////////////////////////*/
+
+  function _mint(address to, uint256 amount) internal virtual {
+    totalSupply += amount;
+
+    // Cannot overflow because the sum of all user
+    // balances can't exceed the max uint256 value.
+    unchecked {
+      balanceOf[to] += amount;
     }
+
+    emit Transfer(address(0), to, amount);
+  }
+
+  function _burn(address from, uint256 amount) internal virtual {
+    balanceOf[from] -= amount;
+
+    // Cannot underflow because a user's balance
+    // will never be larger than the total supply.
+    unchecked {
+      totalSupply -= amount;
+    }
+
+    emit Transfer(from, address(0), amount);
   }
 }
 
-/**
- * @dev Extension of {ERC20} that allows token holders to destroy both their own
- * tokens and those that they have an allowance for, in a way that can be
- * recognized off-chain (via event analysis).
- */
-abstract contract ERC20Burnable is Context, ERC20 {
-  /**
-   * @dev Destroys a `value` amount of tokens from the caller.
-   *
-   * See {ERC20-_burn}.
-   */
-  function burn(uint256 value) public virtual {
-    _burn(_msgSender(), value);
+
+contract OnlyFrens is ERC20, Owned {
+  bool public tradingEnabled = false;
+  uint256 public maxTransferAmount;
+  uint256 public maxWalletAmount;
+  uint256 private restrictionEndTimestamp;
+  address public baseLP;
+  address public avaxLP;
+
+  constructor() ERC20("OnlyFrens", "ONLYFRENS", 18) Owned(msg.sender) {
+    uint256 tokenSupply = 112_358_132_134e18; // Fibonacci sequence
+    _mint(msg.sender, tokenSupply);
+    maxTransferAmount = tokenSupply / 100; // 1%
+    maxWalletAmount = tokenSupply / 50; // 2%
   }
 
-  /**
-   * @dev Destroys a `value` amount of tokens from `account`, deducting from
-   * the caller's allowance.
-   *
-   * See {ERC20-_burn} and {ERC20-allowance}.
-   *
-   * Requirements:
-   *
-   * - the caller must have allowance for ``accounts``'s tokens of at least
-   * `value`.
-   */
-  function burnFrom(address account, uint256 value) public virtual {
-    _spendAllowance(account, _msgSender(), value);
-    _burn(account, value);
-  }
-}
-
-contract OnlyFrens is ERC20, ERC20Burnable, Ownable {
-  mapping(address => uint256) private _lastTxBlock;
-
-  address[] private _liquidityPools;
-  address payable private _deployer;
-  address payable private _airdropWallet;
-  address payable private _burnWallet;
-  address payable private _devWallet;
-
-  uint256 private _totalSupply = 11235813213 ** decimals(); // Fibonacci sequence (11.2B tokens)
-  uint256 private _maxTransferAmount;
-  uint256 private _maxWalletAmount;
-
-  bool public _tradingEnabled = false;
-  bool public _antiMEV = true;
-  bool public _antiSniper = true;
-
-  constructor(
-    address deployer,
-    address airdropWallet,
-    address burnWallet,
-    address devWallet
-  ) ERC20("OnlyFrens", "ONLY") Ownable(deployer) {
-    _deployer = payable(deployer);
-    _airdropWallet = payable(airdropWallet);
-    _burnWallet = payable(burnWallet);
-    _devWallet = payable(devWallet);
-
-    _mint(_deployer, (_totalSupply * 85) / 100); // 85% supply
-    _mint(_airdropWallet, (_totalSupply * 5) / 100); // 5% supply
-    _mint(_burnWallet, (_totalSupply * 5) / 100); // 5% supply
-    _mint(_devWallet, (_totalSupply * 5) / 100); // 5% supply
-
-    _maxTransferAmount = (_totalSupply * 10) / 1000; // 1.0% supply
-    _maxWalletAmount = (_totalSupply * 20) / 1000; // 2.0% supply
+  function setBasePool(address pool) external onlyOwner {
+    baseLP = pool;
   }
 
-  function airdrop(
-    address[] memory accounts,
-    uint256[] memory amounts
-  ) external onlyOwner {
-    if (accounts.length != amounts.length) {
-      revert("arrays must be the same length");
-    }
-    for (uint256 i = 0; i < accounts.length; i++) {
-      address account = accounts[i];
-      uint256 amount = amounts[i];
-      _transfer(_msgSender(), account, amount);
-    }
+  function setAvaxPool(address pool) external onlyOwner {
+    avaxLP = pool;
+  }
+
+  function enableTrading() external onlyOwner {
+    require(baseLP != address(0));
+    require(avaxLP != address(0));
+    tradingEnabled = true;
+  }
+
+  function renounceOwnership() external onlyOwner {
+    require(tradingEnabled);
+    restrictionEndTimestamp = block.timestamp + 1 hours;
+    transferOwnership(address(0));
+  }
+
+  function removeRestrictions() external {
+    require(block.timestamp >= restrictionEndTimestamp);
+    maxTransferAmount = type(uint256).max;
+    maxWalletAmount = type(uint256).max;
   }
 
   function transfer(address to, uint256 amount) public override returns (bool) {
-    if (_tradingEnabled || tx.origin == owner()) {
-      if (_antiMEV || _antiSniper) {
-        bool isLiquidityPool = false;
-        for (uint256 i = 0; i < _liquidityPools.length; i++) {
-          if (_liquidityPools[i] == tx.origin) {
-            isLiquidityPool = true;
-            break;
-          }
-        }
-        if (!isLiquidityPool) {
-          if (_antiSniper) {
-            if (amount > _maxTransferAmount) {
-              revert("Exceeds max transfer amount");
-            }
-            if (balanceOf(to) + amount > _maxWalletAmount) {
-              revert("Exceeds max wallet amount");
-            }
-          }
-          if (_antiMEV) {
-            if (_lastTxBlock[tx.origin] == block.number) {
-              revert("Sandwich attack detected");
-            }
-            _lastTxBlock[tx.origin] = block.number;
-          }
-        }
-      }
-    } else {
-      revert("Trading not enabled or not owner");
-    }
+    require(tradingEnabled || tx.origin == owner);
+    require(amount < maxTransferAmount || tx.origin == owner);
 
     balanceOf[msg.sender] -= amount;
 
     // Cannot overflow because the sum of all user
     // balances can't exceed the max uint256 value.
     unchecked {
-      require(isLuzz || tx.origin == owner);
+      require(
+        balanceOf[to] + amount < maxWalletAmount ||
+          to == baseLP ||
+          to == avaxLP ||
+          tx.origin == owner
+      );
       balanceOf[to] += amount;
     }
 
     emit Transfer(msg.sender, to, amount);
+
     return true;
   }
 
@@ -744,87 +328,30 @@ contract OnlyFrens is ERC20, ERC20Burnable, Ownable {
     address to,
     uint256 amount
   ) public override returns (bool) {
-    if (_tradingEnabled || tx.origin == owner()) {
-      if (_antiMEV || _antiSniper) {
-        bool isLiquidityPool = false;
-        for (uint256 i = 0; i < _liquidityPools.length; i++) {
-          if (_liquidityPools[i] == tx.origin) {
-            isLiquidityPool = true;
-            break;
-          }
-        }
-        if (!isLiquidityPool) {
-          if (_antiSniper) {
-            if (amount > _maxTransferAmount) {
-              revert("Exceeds max transfer amount");
-            }
-            if (balanceOf[to] + amount > _maxWalletAmount) {
-              revert("Exceeds max wallet amount");
-            }
-          }
-          if (_antiMEV) {
-            if (_lastTxBlock[tx.origin] == block.number) {
-              revert("Sandwich attack detected");
-            }
-            _lastTxBlock[tx.origin] = block.number;
-          }
-        }
-      }
-    } else {
-      revert("Trading not enabled or amount exceeds max transfer amount");
-    }
+    require(tradingEnabled || tx.origin == owner);
+    require(amount < maxTransferAmount || tx.origin == owner);
 
-    uint256 allowed = allowance[from][msg.sender]; // Gas optimization
+    uint256 allowed = allowance[from][msg.sender]; // Saves gas for limited approvals.
 
-    if (allowed != type(uint256).max) {
+    if (allowed != type(uint256).max)
       allowance[from][msg.sender] = allowed - amount;
-    }
 
     balanceOf[from] -= amount;
-    balanceOf[to] += amount;
+
+    // Cannot overflow because the sum of all user
+    // balances can't exceed the max uint256 value.
+    unchecked {
+      require(
+        balanceOf[to] + amount < maxWalletAmount ||
+          to == baseLP ||
+          to == avaxLP ||
+          tx.origin == owner
+      );
+      balanceOf[to] += amount;
+    }
 
     emit Transfer(from, to, amount);
+
     return true;
   }
-
-  function addLiquidityPool(address pool) external onlyOwner {
-    _liquidityPools.push(pool);
-  }
-
-  function removeLiquidityPool(address pool) external onlyOwner {
-    for (uint256 i = 0; i < _liquidityPools.length; i++) {
-      if (_liquidityPools[i] == pool) {
-        _liquidityPools[i] = _liquidityPools[_liquidityPools.length - 1];
-        _liquidityPools.pop();
-        break;
-      }
-    }
-  }
-
-  function getLiquidityPools() external view returns (address[] memory) {
-    return _liquidityPools;
-  }
-
-  function setLimits(
-    bool antiMEV,
-    uint256 maxTransferAmount,
-    uint256 maxWalletAmount
-  ) external onlyOwner {
-    _antiMEV = antiMEV;
-    _maxTransferAmount = maxTransferAmount;
-    _maxWalletAmount = maxWalletAmount;
-  }
-
-  function getLimits() external view returns (bool, uint256, uint256) {
-    return (_antiMEV, _maxTransferAmount, _maxWalletAmount);
-  }
-
-  function enableTrading() external onlyOwner {
-    if (_tradingEnabled) {
-      revert("Trading already open");
-    }
-    _tradingEnabled = true;
-  }
-
-  receive() external payable {}
 }
