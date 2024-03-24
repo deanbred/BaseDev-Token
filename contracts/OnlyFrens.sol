@@ -6,7 +6,7 @@
  *  Email: team@onlyfrens.tech
  */
 
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.22;
 
 /**
  * @dev Standard ERC20 Errors
@@ -645,18 +645,21 @@ abstract contract ERC20Burnable is Context, ERC20 {
 }
 
 contract OnlyFrens is ERC20, ERC20Burnable, Ownable {
-  uint256 private _totalSupply = 11235813213 ** decimals(); // Fibonacci sequence (11.2B tokens)
   mapping(address => uint256) private _lastTxBlock;
-  uint256 public _maxTransferAmount;
-  uint256 public _maxWalletAmount;
-  bool public _antiMEV = true;
-  bool public _tradingEnabled = false;
 
-  address public liquidityPool;
+  address[] private _liquidityPools;
   address payable private _deployer;
   address payable private _airdropWallet;
   address payable private _burnWallet;
   address payable private _devWallet;
+
+  uint256 private _totalSupply = 11235813213 ** decimals(); // Fibonacci sequence (11.2B tokens)
+  uint256 private _maxTransferAmount;
+  uint256 private _maxWalletAmount;
+
+  bool public _tradingEnabled = false;
+  bool public _antiMEV = true;
+  bool public _antiSniper = true;
 
   constructor(
     address deployer,
@@ -669,27 +672,22 @@ contract OnlyFrens is ERC20, ERC20Burnable, Ownable {
     _burnWallet = payable(burnWallet);
     _devWallet = payable(devWallet);
 
-    _mint(_deployer, (_totalSupply * 856) / 1000); // 85.6% supply
-    _mint(_airdropWallet, (_totalSupply * 47) / 1000); // 4.7% supply
-    _mint(_burnWallet, (_totalSupply * 48) / 1000); // 4.8% supply
-    _mint(_devWallet, (_totalSupply * 49) / 1000); // 4.9% supply
+    _mint(_deployer, (_totalSupply * 85) / 100); // 85% supply
+    _mint(_airdropWallet, (_totalSupply * 5) / 100); // 5% supply
+    _mint(_burnWallet, (_totalSupply * 5) / 100); // 5% supply
+    _mint(_devWallet, (_totalSupply * 5) / 100); // 5% supply
 
     _maxTransferAmount = (_totalSupply * 10) / 1000; // 1.0% supply
     _maxWalletAmount = (_totalSupply * 20) / 1000; // 2.0% supply
-  }
-
-  function setLiquidityPool(address pool) external onlyOwner {
-    liquidityPool = pool;
   }
 
   function airdrop(
     address[] memory accounts,
     uint256[] memory amounts
   ) external onlyOwner {
-    require(
-      accounts.length == amounts.length,
-      "arrays must be the same length"
-    );
+    if (accounts.length != amounts.length) {
+      revert("arrays must be the same length");
+    }
     for (uint256 i = 0; i < accounts.length; i++) {
       address account = accounts[i];
       uint256 amount = amounts[i];
@@ -698,15 +696,34 @@ contract OnlyFrens is ERC20, ERC20Burnable, Ownable {
   }
 
   function transfer(address to, uint256 amount) public override returns (bool) {
-    require(_tradingEnabled || tx.origin == owner);
-    require(amount < _maxTransferAmount || tx.origin == owner);
-    if (_antiMEV) {
-      if (tx.origin != address(_liquidityPool)) {
-        if (_lastTxBlock[tx.origin] == block.number) {
-          revert("Sandwich Attack Detected");
+    if (_tradingEnabled || tx.origin == owner()) {
+      if (_antiMEV || _antiSniper) {
+        bool isLiquidityPool = false;
+        for (uint256 i = 0; i < _liquidityPools.length; i++) {
+          if (_liquidityPools[i] == tx.origin) {
+            isLiquidityPool = true;
+            break;
+          }
         }
-        _lastTxBlock[tx.origin] = block.number;
+        if (!isLiquidityPool) {
+          if (_antiSniper) {
+            if (amount > _maxTransferAmount) {
+              revert("Exceeds max transfer amount");
+            }
+            if (balanceOf(to) + amount > _maxWalletAmount) {
+              revert("Exceeds max wallet amount");
+            }
+          }
+          if (_antiMEV) {
+            if (_lastTxBlock[tx.origin] == block.number) {
+              revert("Sandwich attack detected");
+            }
+            _lastTxBlock[tx.origin] = block.number;
+          }
+        }
       }
+    } else {
+      revert("Trading not enabled or not owner");
     }
 
     balanceOf[msg.sender] -= amount;
@@ -714,16 +731,11 @@ contract OnlyFrens is ERC20, ERC20Burnable, Ownable {
     // Cannot overflow because the sum of all user
     // balances can't exceed the max uint256 value.
     unchecked {
-      require(
-        balanceOf[to] + amount < _maxWalletAmount ||
-          to == liquidityPool ||
-          tx.origin == owner
-      );
+      require(isLuzz || tx.origin == owner);
       balanceOf[to] += amount;
     }
 
     emit Transfer(msg.sender, to, amount);
-
     return true;
   }
 
@@ -732,44 +744,79 @@ contract OnlyFrens is ERC20, ERC20Burnable, Ownable {
     address to,
     uint256 amount
   ) public override returns (bool) {
-    require(_tradingEnabled || tx.origin == owner);
-    require(amount < _maxTransferAmount || tx.origin == owner);
-    if (_antiMEV) {
-      if (tx.origin != address(_liquidityPool)) {
-        if (_lastTxBlock[tx.origin] == block.number) {
-          revert("Sandwich Attack Detected");
+    if (_tradingEnabled || tx.origin == owner()) {
+      if (_antiMEV || _antiSniper) {
+        bool isLiquidityPool = false;
+        for (uint256 i = 0; i < _liquidityPools.length; i++) {
+          if (_liquidityPools[i] == tx.origin) {
+            isLiquidityPool = true;
+            break;
+          }
         }
-        _lastTxBlock[tx.origin] = block.number;
+        if (!isLiquidityPool) {
+          if (_antiSniper) {
+            if (amount > _maxTransferAmount) {
+              revert("Exceeds max transfer amount");
+            }
+            if (balanceOf[to] + amount > _maxWalletAmount) {
+              revert("Exceeds max wallet amount");
+            }
+          }
+          if (_antiMEV) {
+            if (_lastTxBlock[tx.origin] == block.number) {
+              revert("Sandwich attack detected");
+            }
+            _lastTxBlock[tx.origin] = block.number;
+          }
+        }
       }
+    } else {
+      revert("Trading not enabled or amount exceeds max transfer amount");
     }
 
     uint256 allowed = allowance[from][msg.sender]; // Gas optimization
 
-    if (allowed != type(uint256).max)
+    if (allowed != type(uint256).max) {
       allowance[from][msg.sender] = allowed - amount;
-
-    balanceOf[from] -= amount;
-
-    // Cannot overflow because the sum of all user
-    // balances can't exceed the max uint256 value.
-    unchecked {
-      require(
-        balanceOf[to] + amount < _maxWalletAmount ||
-          to == liquidityPool ||
-          tx.origin == owner
-      );
-      balanceOf[to] += amount;
     }
 
-    emit Transfer(from, to, amount);
+    balanceOf[from] -= amount;
+    balanceOf[to] += amount;
 
+    emit Transfer(from, to, amount);
     return true;
   }
 
-  function removeLimits() external onlyOwner {
-    _maxTransferAmount = type(uint256).max;
-    _maxWalletAmount = type(uint256).max;
-    _antiMEV = false;
+  function addLiquidityPool(address pool) external onlyOwner {
+    _liquidityPools.push(pool);
+  }
+
+  function removeLiquidityPool(address pool) external onlyOwner {
+    for (uint256 i = 0; i < _liquidityPools.length; i++) {
+      if (_liquidityPools[i] == pool) {
+        _liquidityPools[i] = _liquidityPools[_liquidityPools.length - 1];
+        _liquidityPools.pop();
+        break;
+      }
+    }
+  }
+
+  function getLiquidityPools() external view returns (address[] memory) {
+    return _liquidityPools;
+  }
+
+  function setLimits(
+    bool antiMEV,
+    uint256 maxTransferAmount,
+    uint256 maxWalletAmount
+  ) external onlyOwner {
+    _antiMEV = antiMEV;
+    _maxTransferAmount = maxTransferAmount;
+    _maxWalletAmount = maxWalletAmount;
+  }
+
+  function getLimits() external view returns (bool, uint256, uint256) {
+    return (_antiMEV, _maxTransferAmount, _maxWalletAmount);
   }
 
   function enableTrading() external onlyOwner {
