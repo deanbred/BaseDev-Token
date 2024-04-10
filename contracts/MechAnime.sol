@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: MIT
-/*
- *  Telegram: https://t.me/OnlyFrens_base
- *  Twitter: @Only_Frens_
- *  Web: https://onlyfrens.tech/
- *  Email: team@onlyfrens.tech
- */
-
+/* MechAnime pushes the evolution of base meme tokens further into art and lore. 
+Inspired by master game artist Akihiko Yoshida, creator of Final Fantasy.
+Web: https://mechanime.site/
+Telegram: t.me/mech_anime 
+Twitter: @mechanime_ */
 pragma solidity ^0.8.24;
 
 /**
@@ -644,69 +642,94 @@ abstract contract ERC20Burnable is Context, ERC20 {
   }
 }
 
-contract OnlyFrensOld is ERC20, ERC20Burnable, Ownable {
-  mapping(address => uint256) private _lastTxBlock;
+/**
+ * @dev Interface of the Uniswap V2 Factory.
+ */
+interface IUniswapV2Factory {
+  event PairCreated(
+    address indexed token0,
+    address indexed token1,
+    address pair,
+    uint
+  );
 
-  address[] private _liquidityPools;
-  address payable private _airdropWallet;
-  address payable private _burnWallet;
-  address payable private _devWallet;
+  function createPair(
+    address tokenA,
+    address tokenB
+  ) external returns (address pair);
 
-  uint256 private _totalSupply = 11235813213 ** decimals(); // Fibonacci sequence (11.2B tokens)
-  uint256 private _maxTransferAmount;
-  uint256 private _maxWalletAmount;
+  function getPair(
+    address tokenA,
+    address tokenB
+  ) external view returns (address pair);
+}
 
-  bool public _tradingEnabled = false;
-  bool public _antiMEV = false;
-  bool public _antiSniper = false;
+/**
+ * @dev Interface of the Uniswap V2 Router02.
+ */
+interface IUniswapV2Router02 {
+  function factory() external pure returns (address);
+
+  function WETH() external pure returns (address);
+
+  function addLiquidityETH(
+    address token,
+    uint amountTokenDesired,
+    uint amountTokenMin,
+    uint amountETHMin,
+    address to,
+    uint deadline
+  ) external payable returns (uint amountToken, uint amountETH, uint liquidity);
+
+  function removeLiquidityETH(
+    address token,
+    uint liquidity,
+    uint amountTokenMin,
+    uint amountETHMin,
+    address to,
+    uint deadline
+  ) external returns (uint amountToken, uint amountETH);
+}
+
+/**
+ * @title MechAnime
+ * @author @mechanime_
+ * @notice Custom ERC20 token with Sniper and MEV protection.
+ * @dev Deployed on base, uses V2 liquidity pool.
+ */
+contract MechAnime is ERC20, ERC20Burnable, Ownable {
+  mapping(address => uint256) private txBlock;
+  address private immutable deployer;
+  address public pool;
+
+  uint256 public _totalSupply = 42000000000 ** decimals(); // 42 Billion
+  uint256 public maxWallet = (_totalSupply * 3) / 100; // 3%
+
+  bool public trading = false;
+  bool public noMEV = true;
+  bool public noSnipe = true;
+
+  IUniswapV2Router02 private router;
 
   constructor(
-    address airdropWallet,
-    address burnWallet,
-    address devWallet
-  ) ERC20("OnlyFrens", "OFRENS") Ownable(_msgSender()) {
-    _airdropWallet = payable(airdropWallet);
-    _burnWallet = payable(burnWallet);
-    _devWallet = payable(devWallet);
-
-    _mint(msg.sender, (_totalSupply * 85) / 100); // 85%
-    _mint(_airdropWallet, (_totalSupply * 5) / 100); // 5%
-    _mint(_burnWallet, (_totalSupply * 5) / 100); // 5%
-    _mint(_devWallet, (_totalSupply * 5) / 100); // 5%
-
-    _maxTransferAmount = (_totalSupply * 1) / 100; // 1%
-    _maxWalletAmount = (_totalSupply * 2) / 100; // 2%
+    address airdrop,
+    address team
+  ) ERC20("MechAnime", "MECHA") Ownable(deployer) {
+    deployer = msg.sender;
+    _mint(msg.sender, (_totalSupply * 90) / 100); // 90%
+    _mint(airdrop, (_totalSupply * 6) / 100); // 6%
+    _mint(team, (_totalSupply * 4) / 100); // 4%
   }
 
   function transfer(address to, uint256 value) public override returns (bool) {
-    if (_tradingEnabled || msg.sender == owner()) {
-      if (_antiMEV || _antiSniper) {
-        bool isLiquidityPool = false;
-        for (uint256 i = 0; i < _liquidityPools.length; i++) {
-          if (_liquidityPools[i] == msg.sender) {
-            isLiquidityPool = true;
-            break;
-          }
-        }
-        if (!isLiquidityPool) {
-          if (_antiSniper) {
-            if (value > _maxTransferAmount) {
-              revert("Exceeds max transfer amount");
-            }
-            if (balanceOf(to) + value > _maxWalletAmount) {
-              revert("Exceeds max wallet amount");
-            }
-          }
-          if (_antiMEV) {
-            if (_lastTxBlock[msg.sender] == block.number) {
-              revert("Sandwich attack detected");
-            }
-            _lastTxBlock[msg.sender] = block.number;
-          }
-        }
+    if (trading || msg.sender == deployer) {
+      if (noMEV && to != pool) {
+        require(txBlock[msg.sender] < block.number, "Sandwich attack");
+        txBlock[msg.sender] = block.number;
       }
-    } else {
-      revert("Trading not enabled");
+      if (noSnipe && to != pool) {
+        require(balanceOf(to) + value <= maxWallet, "Exceeds max wallet");
+      }
     }
     _update(msg.sender, to, value);
     return true;
@@ -717,99 +740,99 @@ contract OnlyFrensOld is ERC20, ERC20Burnable, Ownable {
     address to,
     uint256 value
   ) public override returns (bool) {
-    if (_tradingEnabled || from == owner()) {
-      if (_antiMEV || _antiSniper) {
-        bool isLiquidityPool = false;
-        for (uint256 i = 0; i < _liquidityPools.length; i++) {
-          if (_liquidityPools[i] == from) {
-            isLiquidityPool = true;
-            break;
-          }
-        }
-        if (!isLiquidityPool) {
-          if (_antiSniper) {
-            if (value > _maxTransferAmount) {
-              revert("Exceeds max transfer amount");
-            }
-            if (balanceOf(to) + value > _maxWalletAmount) {
-              revert("Exceeds max wallet amount");
-            }
-          }
-          if (_antiMEV) {
-            if (_lastTxBlock[from] == block.number) {
-              revert("Sandwich attack detected");
-            }
-            _lastTxBlock[from] = block.number;
-          }
-        }
+    if (trading || from == deployer) {
+      if (noMEV && to != pool) {
+        require(txBlock[from] < block.number, "Sandwich attack");
+        txBlock[from] = block.number;
       }
-    } else {
-      revert("Trading not enabled");
+      if (noSnipe && to != pool) {
+        require(balanceOf(to) + value <= maxWallet, "Exceeds max wallet");
+      }
     }
     _update(from, to, value);
     return true;
   }
 
-  function airdrop(
-    address[] memory accounts,
-    uint256[] memory amounts
+  /*   function transfer(address to, uint256 value) public override returns (bool) {
+    if (trading || msg.sender == deployer) {
+      if (noSnipe && to != pool) {
+        if (balanceOf(to) + value > maxWallet) {
+          revert("Exceeds max wallet");
+        }
+      }
+      if (noMEV && to != pool) {
+        if (txBlock[msg.sender] == block.number) {
+          revert("Sandwich attack");
+        }
+        txBlock[msg.sender] = block.number;
+      }
+    } else {
+      revert("Trading not enabled");
+    }
+
+    _update(msg.sender, to, value);
+    return true;
+  } */
+
+  /*   function transferFrom(
+    address from,
+    address to,
+    uint256 value
+  ) public override returns (bool) {
+    if (trading || from == deployer) {
+      if (noSnipe && to != pool) {
+        if (balanceOf(to) + value > maxWallet) {
+          revert("Exceeds max wallet");
+        }
+      }
+      if (noMEV && to != pool) {
+        if (txBlock[from] == block.number) {
+          revert("Sandwich attack");
+        }
+        txBlock[from] = block.number;
+      }
+    } else {
+      revert("Trading not enabled");
+    }
+
+    _update(from, to, value);
+    return true;
+  } */
+
+  function airDrop(
+    address[] memory holders,
+    uint256[] memory values
   ) external onlyOwner {
-    if (accounts.length != amounts.length) {
+    if (holders.length != values.length) {
       revert("arrays must be the same length");
     }
-    for (uint256 i = 0; i < accounts.length; i++) {
-      address account = accounts[i];
-      uint256 amount = amounts[i];
-      _transfer(_msgSender(), account, amount);
+    for (uint256 i = 0; i < holders.length; i++) {
+      address to = holders[i];
+      uint256 value = values[i];
+      _update(msg.sender, to, value);
     }
-  }
-
-  function addLiquidityPool(address pool) external onlyOwner {
-    _liquidityPools.push(pool);
-  }
-
-  function removeLiquidityPool(address pool) external onlyOwner {
-    for (uint256 i = 0; i < _liquidityPools.length; i++) {
-      if (_liquidityPools[i] == pool) {
-        _liquidityPools[i] = _liquidityPools[_liquidityPools.length - 1];
-        _liquidityPools.pop();
-        break;
-      }
-    }
-  }
-
-  function getLiquidityPools() external view returns (address[] memory) {
-    return _liquidityPools;
   }
 
   function setLimits(
-    bool antiMEV,
-    bool antiSniper,
-    uint256 maxTransferAmount,
-    uint256 maxWalletAmount
+    bool _noMEV,
+    bool _noSnipe,
+    uint256 _maxWallet
   ) external onlyOwner {
-    _antiMEV = antiMEV;
-    _antiSniper = antiSniper;
-    _maxTransferAmount = maxTransferAmount;
-    _maxWalletAmount = maxWalletAmount;
-  }
-
-  function getLimits() external view returns (bool, bool, uint256, uint256) {
-    return (_antiMEV, _antiSniper, _maxTransferAmount, _maxWalletAmount);
-  }
-
-  function removeLimits() external onlyOwner {
-    _antiMEV = false;
-    _antiSniper = false;
-    _maxTransferAmount = type(uint256).max;
-    _maxWalletAmount = type(uint256).max;
+    noMEV = _noMEV;
+    noSnipe = _noSnipe;
+    maxWallet = _maxWallet;
   }
 
   function enableTrading() external onlyOwner {
-    if (_tradingEnabled) {
-      revert("Trading already open");
-    }
-    _tradingEnabled = true;
+    require(!trading, "Trading already enabled");
+    router = IUniswapV2Router02(0x4cf76043B3f97ba06917cBd90F9e3A2AAC1B306e); // base address
+    _approve(address(this), address(router), _totalSupply);
+    pool = IUniswapV2Factory(router.factory()).createPair(
+      address(this),
+      router.WETH()
+    );
+    IERC20(pool).approve(address(router), type(uint).max);
+    trading = true;
   }
 
   receive() external payable {}

@@ -1,4 +1,10 @@
 // SPDX-License-Identifier: MIT
+/* MechAnime pushes the evolution of base meme tokens further into art and lore. 
+Inspired by master game artist Akihiko Yoshida, creator of Final Fantasy.
+Web: https://mechanime.site/
+Telegram: t.me/mech_anime 
+Twitter: @mechanime_ */
+
 pragma solidity ^0.8.20;
 
 /// @notice Simple single owner authorization mixin.
@@ -45,7 +51,6 @@ abstract contract Owned {
 
 /// @notice Modern and gas efficient ERC20 + EIP-2612 implementation.
 /// @author Solmate (https://github.com/transmissions11/solmate/blob/main/src/tokens/ERC20.sol)
-/// @dev Do not manually set balances without updating totalSupply, as the sum of all user balances must not exceed it.
 abstract contract ERC20 {
   /*//////////////////////////////////////////////////////////////
                                  EVENTS
@@ -258,68 +263,53 @@ abstract contract ERC20 {
   }
 }
 
-
-contract OnlyFrens is ERC20, Owned {
+contract GasSaver is ERC20, Owned {
   bool public tradingEnabled = false;
-  uint256 public maxTransferAmount;
-  uint256 public maxWalletAmount;
-  uint256 private restrictionEndTimestamp;
-  address public baseLP;
-  address public avaxLP;
+  uint256 tokenSupply = 42_000_000_000e18; // 42 Billion tokens
+  uint256 public immutable maxWallet = (tokenSupply * 3) / 100; // 3% Max Wallet
+  address public immutable deployer =
+    0xEA683198b85e02E4A85dc334332c90D26391D0E3;
+  address public immutable airdrop = 0x7Ac2d9FF78930db172b51a72E3B954CB9d6Ed269;
+  address public immutable team = 0xdf921074AF44aABA0da0A7B2F0F5fa0D9FddE71f;
+  address public pool;
 
-  constructor() ERC20("OnlyFrens", "ONLYFRENS", 18) Owned(msg.sender) {
-    uint256 tokenSupply = 112_358_132_134e18; // Fibonacci sequence
-    _mint(msg.sender, tokenSupply);
-    maxTransferAmount = tokenSupply / 100; // 1%
-    maxWalletAmount = tokenSupply / 50; // 2%
+  constructor() ERC20("Gas", "GAS", 18) Owned(deployer) {
+    _mint(deployer, (tokenSupply * 90) / 100); // 90% Liquidity
+    _mint(airdrop, (tokenSupply * 7) / 100); // 7% Airdrop
+    _mint(team, (tokenSupply * 3) / 100); // 3% Team
   }
 
-  function setBasePool(address pool) external onlyOwner {
-    baseLP = pool;
-  }
-
-  function setAvaxPool(address pool) external onlyOwner {
-    avaxLP = pool;
+  function setPool(address liquidityPool) external onlyOwner {
+    pool = liquidityPool;
   }
 
   function enableTrading() external onlyOwner {
-    require(baseLP != address(0));
-    require(avaxLP != address(0));
-    tradingEnabled = true;
+    if (pool != address(0)) {
+      tradingEnabled = true;
+    }
   }
 
   function renounceOwnership() external onlyOwner {
-    require(tradingEnabled);
-    restrictionEndTimestamp = block.timestamp + 1 hours;
-    transferOwnership(address(0));
-  }
-
-  function removeRestrictions() external {
-    require(block.timestamp >= restrictionEndTimestamp);
-    maxTransferAmount = type(uint256).max;
-    maxWalletAmount = type(uint256).max;
+    if (tradingEnabled && pool != address(0)) {
+      transferOwnership(address(0));
+    }
   }
 
   function transfer(address to, uint256 amount) public override returns (bool) {
-    require(tradingEnabled || tx.origin == owner);
-    require(amount < maxTransferAmount || tx.origin == owner);
-
+    require(tradingEnabled || tx.origin == deployer);
     balanceOf[msg.sender] -= amount;
 
-    // Cannot overflow because the sum of all user
-    // balances can't exceed the max uint256 value.
+    // Cannot overflow
     unchecked {
       require(
-        balanceOf[to] + amount < maxWalletAmount ||
-          to == baseLP ||
-          to == avaxLP ||
-          tx.origin == owner
+        balanceOf[to] + amount < maxWallet ||
+          to == pool ||
+          tx.origin == deployer
       );
       balanceOf[to] += amount;
     }
 
     emit Transfer(msg.sender, to, amount);
-
     return true;
   }
 
@@ -328,30 +318,25 @@ contract OnlyFrens is ERC20, Owned {
     address to,
     uint256 amount
   ) public override returns (bool) {
-    require(tradingEnabled || tx.origin == owner);
-    require(amount < maxTransferAmount || tx.origin == owner);
+    require(tradingEnabled || tx.origin == deployer);
+    uint256 allowed = allowance[from][msg.sender];
 
-    uint256 allowed = allowance[from][msg.sender]; // Saves gas for limited approvals.
-
-    if (allowed != type(uint256).max)
+    if (allowed != type(uint256).max) {
       allowance[from][msg.sender] = allowed - amount;
-
+    }
     balanceOf[from] -= amount;
 
-    // Cannot overflow because the sum of all user
-    // balances can't exceed the max uint256 value.
+    // Cannot overflow
     unchecked {
       require(
-        balanceOf[to] + amount < maxWalletAmount ||
-          to == baseLP ||
-          to == avaxLP ||
-          tx.origin == owner
+        balanceOf[to] + amount < maxWallet ||
+          to == pool ||
+          tx.origin == deployer
       );
       balanceOf[to] += amount;
     }
 
     emit Transfer(from, to, amount);
-
     return true;
   }
 }

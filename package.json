@@ -1,10 +1,10 @@
 {
-  "name": "basedev",
+  "name": "mechanime",
   "version": "1.0.0",
   "description": "ERC20 token",
   "main": "index.js",
-  "repository": "https://github.com/deanbred/BaseDev-Token",
-  "author": "deanbred",
+  "repository": "https://github.com/",
+  "author": "mechanime",
   "license": "MIT",
   "scripts": {
     "compile": "hardhat compile",

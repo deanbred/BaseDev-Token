@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MIT
-/*
- *  Telegram: https://t.me/OnlyFrens_base
- *  Twitter: @Only_Frens_
- *  Web: https://onlyfrens.tech/
- *  Email: team@onlyfrens.tech
- */
+/* MechAnime pushes the evolution of base meme tokens further into art and lore. 
+Inspired by master game artist Akihiko Yoshida, creator of Final Fantasy.
+Web: https://mechanime.site/
+Telegram: t.me/mech_anime 
+Twitter: @mechanime_ */
 
 pragma solidity ^0.8.24;
 
@@ -12,13 +11,16 @@ abstract contract Context {
   function _msgSender() internal view virtual returns (address) {
     return msg.sender;
   }
+
+  function _msgData() internal view virtual returns (bytes calldata) {
+    return msg.data;
+  }
 }
 
 abstract contract Ownable is Context {
   address private _owner;
 
   error OwnableUnauthorizedAccount(address account);
-
   error OwnableInvalidOwner(address owner);
 
   event OwnershipTransferred(
@@ -66,6 +68,9 @@ abstract contract Ownable is Context {
 }
 
 interface IERC20 {
+  event Transfer(address indexed from, address indexed to, uint256 value);
+  event Approval(address indexed owner, address indexed spender, uint256 value);
+
   function totalSupply() external view returns (uint256);
 
   function balanceOf(address account) external view returns (uint256);
@@ -84,57 +89,57 @@ interface IERC20 {
     address recipient,
     uint256 value
   ) external returns (bool);
-
-  event Transfer(address indexed from, address indexed to, uint256 value);
-  event Approval(address indexed owner, address indexed spender, uint256 value);
 }
 
-contract OFRENS is Context, IERC20, Ownable {
+interface IUniswapV2Factory {
+  function createPair(
+    address tokenA,
+    address tokenB
+  ) external returns (address pair);
+}
+
+interface IUniswapV2Router02 {
+  function factory() external pure returns (address);
+
+  function WETH() external pure returns (address);
+
+  function addLiquidityETH(
+    address token,
+    uint amountTokenDesired,
+    uint amountTokenMin,
+    uint amountETHMin,
+    address to,
+    uint deadline
+  ) external payable returns (uint amountToken, uint amountETH, uint liquidity);
+}
+
+contract MechAnimeV1 is Context, IERC20, Ownable {
   mapping(address => uint256) private _balances;
   mapping(address => mapping(address => uint256)) private _allowances;
   mapping(address => uint256) private _lastTxBlock;
 
-  address[] private _liquidityPools;
-  address payable private _airdropWallet;
-  address payable private _burnWallet;
-  address payable private _devWallet;
+  address public immutable deployer =
+    0xEA683198b85e02E4A85dc334332c90D26391D0E3;
+  address public immutable airdrop = 0x7Ac2d9FF78930db172b51a72E3B954CB9d6Ed269;
+  address public immutable team = 0xdf921074AF44aABA0da0A7B2F0F5fa0D9FddE71f;
 
-  string private constant _name = unicode"OnlyFrens";
-  string private constant _symbol = unicode"OFRENS";
+  bool public _antiMEV = true;
+  bool public _antiSniper = true;
+
+  string private constant _name = unicode"MechAnime";
+  string private constant _symbol = unicode"MECHA";
   uint8 private constant _decimals = 18;
-  uint256 private _totalSupply = 11235813213 * 10 ** _decimals; // Fibonacci sequence (11.2B tokens)
-  uint256 private _maxTransferAmount;
-  uint256 private _maxWalletAmount;
+  uint256 private _totalSupply = 42000000000 * 10 ** _decimals; // 42 billion
+  uint256 public _maxWallet = (_totalSupply * 3) / 100; // 3%
 
+  IUniswapV2Router02 private uniswapV2Router;
+  address public uniswapV2Pair;
   bool public _tradingEnabled = false;
-  bool public _antiMEV = false;
-  bool public _antiSniper = false;
 
-  constructor(
-    address airdropWallet,
-    address burnWallet,
-    address devWallet
-  ) Ownable() {
-    _airdropWallet = payable(airdropWallet);
-    _burnWallet = payable(burnWallet);
-    _devWallet = payable(devWallet);
-
-    _balances[_msgSender()] = (_totalSupply * 85) / 100; // 85%
-    _balances[_airdropWallet] = (_totalSupply * 5) / 100; // 5%
-    _balances[_burnWallet] = (_totalSupply * 5) / 100; // 5%
-    _balances[_devWallet] = (_totalSupply * 5) / 100; // 5%
-
-    _maxTransferAmount = (_totalSupply * 1) / 100; // 1%
-    _maxWalletAmount = (_totalSupply * 2) / 100; // 2%
-  }
-
-  function burn(address account, uint256 value) external onlyOwner {
-    if (value >= _balances[account]) {
-      revert("Burn amount exceeds account balance");
-    }
-    _balances[account] -= value;
-    _totalSupply -= value;
-    emit Transfer(account, address(0), value);
+  constructor() Ownable() {
+    _balances[_msgSender()] = (_totalSupply * 90) / 100; // 90%
+    _balances[airdrop] = (_totalSupply * 6) / 100; // 6%
+    _balances[team] = (_totalSupply * 4) / 100; // 4%
   }
 
   function name() public pure returns (string memory) {
@@ -220,31 +225,18 @@ contract OFRENS is Context, IERC20, Ownable {
     if (value <= 0) {
       revert("ERC20: transfer value must be greater than zero");
     }
-
     if (_tradingEnabled || _msgSender() == owner()) {
-      if (_antiMEV || _antiSniper) {
-        bool isLiquidityPool = false;
-        for (uint256 i = 0; i < _liquidityPools.length; i++) {
-          if (_liquidityPools[i] == _msgSender()) {
-            isLiquidityPool = true;
-            break;
+      if (to != address(uniswapV2Router) && to != address(uniswapV2Pair)) {
+        if (_antiSniper) {
+          if (balanceOf(to) + value > _maxWallet) {
+            revert("Exceeds max wallet");
           }
         }
-        if (!isLiquidityPool) {
-          if (_antiSniper) {
-            if (value > _maxTransferAmount) {
-              revert("Exceeds max transfer value");
-            }
-            if (balanceOf(to) + value > _maxWalletAmount) {
-              revert("Exceeds max wallet amount");
-            }
+        if (_antiMEV) {
+          if (_lastTxBlock[_msgSender()] == block.number) {
+            revert("Sandwich attack");
           }
-          if (_antiMEV) {
-            if (_lastTxBlock[_msgSender()] == block.number) {
-              revert("Sandwich attack detected");
-            }
-            _lastTxBlock[_msgSender()] = block.number;
-          }
+          _lastTxBlock[_msgSender()] = block.number;
         }
       }
     } else {
@@ -256,7 +248,7 @@ contract OFRENS is Context, IERC20, Ownable {
     emit Transfer(from, to, value);
   }
 
-  function airdrop(
+  function airdropHolders(
     address[] memory accounts,
     uint256[] memory amounts
   ) external onlyOwner {
@@ -270,51 +262,34 @@ contract OFRENS is Context, IERC20, Ownable {
     }
   }
 
-  function addLiquidityPool(address pool) external onlyOwner {
-    _liquidityPools.push(pool);
-  }
-
-  function removeLiquidityPool(address pool) external onlyOwner {
-    for (uint256 i = 0; i < _liquidityPools.length; i++) {
-      if (_liquidityPools[i] == pool) {
-        _liquidityPools[i] = _liquidityPools[_liquidityPools.length - 1];
-        _liquidityPools.pop();
-        break;
-      }
-    }
-  }
-
-  function getLiquidityPools() external view returns (address[] memory) {
-    return _liquidityPools;
-  }
-
   function setLimits(
     bool antiMEV,
     bool antiSniper,
-    uint256 maxTransferAmount,
     uint256 maxWalletAmount
   ) external onlyOwner {
     _antiMEV = antiMEV;
     _antiSniper = antiSniper;
-    _maxTransferAmount = maxTransferAmount;
-    _maxWalletAmount = maxWalletAmount;
+    _maxWallet = maxWalletAmount;
   }
 
-  function getLimits() external view returns (bool, bool, uint256, uint256) {
-    return (_antiMEV, _antiSniper, _maxTransferAmount, _maxWalletAmount);
-  }
-
-  function removeLimits() external onlyOwner {
-    _antiMEV = false;
-    _antiSniper = false;
-    _maxTransferAmount = type(uint256).max;
-    _maxWalletAmount = type(uint256).max;
+  function getLimits() external view returns (bool, bool, uint256) {
+    return (_antiMEV, _antiSniper, _maxWallet);
   }
 
   function enableTrading() external onlyOwner {
     if (_tradingEnabled) {
       revert("Trading already open");
     }
+
+    uniswapV2Router = IUniswapV2Router02(
+      0x4cf76043B3f97ba06917cBd90F9e3A2AAC1B306e
+    ); // base address
+    _approve(address(this), address(uniswapV2Router), _totalSupply);
+    uniswapV2Pair = IUniswapV2Factory(uniswapV2Router.factory()).createPair(
+      address(this),
+      uniswapV2Router.WETH()
+    );
+    IERC20(uniswapV2Pair).approve(address(uniswapV2Router), type(uint).max);
     _tradingEnabled = true;
   }
 

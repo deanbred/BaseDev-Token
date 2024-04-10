@@ -1,4 +1,4 @@
-# BaseDev ERC20 Token on the new base blockchain 
+# Custom ERC20 Token on base 
 
 Try running some of the following tasks:
 
