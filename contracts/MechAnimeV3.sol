@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-/* MechAnime pushes the evolution of meme tokens further into art and lore.
+/**
+ * MechAnime pushes the evolution of base meme tokens further into art and lore.
  * Inspired by master game artist Akihiko Yoshida, creator of Final Fantasy.
- * Contract is a gas optimized ERC20 with anti-snipe and anti-MEV features.
- * Designed so V2 Liquidity Pool can be created and locked before trading.
- *
  * Web: https://mechanime.site/
- * TG: t.me/mech_anime
- * X: @mechanime_ */
+ * Telegram: t.me/mech_anime
+ * Twitter: @mechanime_
+ * Interface of the https://eips.ethereum.org/EIPS/eip-6093[ERC-6093] custom errors for ERC20 tokens.
+ */
 
 pragma solidity ^0.8.24;
 
@@ -646,70 +646,47 @@ abstract contract ERC20Burnable is Context, ERC20 {
   }
 }
 
-interface IUniswapV2Factory {
-  function createPair(
-    address tokenA,
-    address tokenB
-  ) external returns (address pair);
-}
-
-interface IUniswapV2Router02 {
-  function factory() external pure returns (address);
-
-  function WETH() external pure returns (address);
-}
-
 /**
  * @title MechAnime
  * @author @mechanime_
  * @notice Custom ERC20 token with Sniper and MEV protection.
  * @dev Deployed on base, uses V2 liquidity pool.
  */
-contract MechAnime is ERC20, ERC20Burnable, Ownable {
-  mapping(address => uint256) private lastTxBlock;
+contract MechAnimeV3 is ERC20, ERC20Burnable, Ownable {
+  mapping(address => uint256) private txBlock;
+  address public deployer;
 
-  address private deployer;
-  address public pair;
+  //address public pool = 0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a; // Uniswap V3 QuoterV2 base
+  address public pool = 0xC5290058841028F1614F3A6F0F5816cAd0df5E27; // Uniswap V3 QuoterV2 base sepolia
 
-  uint256 private constant initialSupply = 42_000_000_000e18; // 42 Billion
-  uint256 public maxWallet;
+  uint256 public initialSupply = 42000000000e18; // 42 Billion
+  uint256 public maxWallet = (initialSupply * 3) / 100; // 3%
 
-  bool private trading = false;
+  bool public trading = false;
   bool public noMEV = true;
   bool public noSnipe = true;
 
-  IUniswapV2Router02 private router;
-
   constructor(
-    address burn,
-    address team
+    address team, // 0xdf921074AF44aABA0da0A7B2F0F5fa0D9FddE71f
+    address airdrop // 0x7Ac2d9FF78930db172b51a72E3B954CB9d6Ed269
   ) ERC20("MechAnime", "MECHA") Ownable(msg.sender) {
-    deployer = _msgSender();
-    _mint(deployer, (initialSupply * 90) / 100); // 90% for LP
-    _mint(burn, (initialSupply * 5) / 100); // 5% for burns
-    _mint(team, (initialSupply * 5) / 100); // 5% for team
-    maxWallet = (initialSupply * 3) / 100; // 3% max
+    deployer = msg.sender;
+    _mint(msg.sender, (initialSupply * 90) / 100);
+    _mint(airdrop, (initialSupply * 6) / 100);
+    _mint(team, (initialSupply * 4) / 100);
   }
 
   function transfer(address to, uint256 value) public override returns (bool) {
-    if (trading || _msgSender() == deployer) {
-      if (to != address(router) && to != address(pair)) {
-        if (noSnipe) {
-          if (balanceOf(to) + value > maxWallet) {
-            revert("Exceeds max wallet");
-          }
-        }
-        if (noMEV) {
-          if (lastTxBlock[_msgSender()] == block.number) {
-            revert("Sandwich attack");
-          }
-          lastTxBlock[_msgSender()] = block.number;
-        }
+    if (trading || msg.sender == deployer) {
+      if (noMEV && to != address(pool)) {
+        require(txBlock[tx.origin] < block.number, "Sandwich attack");
+        txBlock[tx.origin] = block.number;
       }
-    } else {
-      revert("Trading not enabled");
+      if (noSnipe && to != address(pool) && msg.sender != address(pool)) {
+        require(balanceOf(to) + value <= maxWallet, "Exceeds max wallet");
+      }
     }
-    _update(_msgSender(), to, value);
+    _update(msg.sender, to, value);
     return true;
   }
 
@@ -718,25 +695,31 @@ contract MechAnime is ERC20, ERC20Burnable, Ownable {
     address to,
     uint256 value
   ) public override returns (bool) {
-    if (trading || _msgSender() == deployer) {
-      if (to != address(router) && to != address(pair)) {
-        if (noSnipe) {
-          if (balanceOf(to) + value > maxWallet) {
-            revert("Exceeds max wallet");
-          }
-        }
-        if (noMEV) {
-          if (lastTxBlock[_msgSender()] == block.number) {
-            revert("Sandwich attack");
-          }
-          lastTxBlock[_msgSender()] = block.number;
-        }
+    if (trading || from == deployer) {
+      if (noMEV && to != address(pool)) {
+        require(txBlock[tx.origin] < block.number, "Sandwich attack");
+        txBlock[tx.origin] = block.number;
       }
-    } else {
-      revert("Trading not enabled");
+      if (noSnipe && to != address(pool) && msg.sender != address(pool)) {
+        require(balanceOf(to) + value <= maxWallet, "Exceeds max wallet");
+      }
     }
     _update(from, to, value);
     return true;
+  }
+
+  function airDrop(
+    address[] memory holders,
+    uint256[] memory values
+  ) external onlyOwner {
+    if (holders.length != values.length) {
+      revert("arrays must be the same length");
+    }
+    for (uint256 i = 0; i < holders.length; i++) {
+      address to = holders[i];
+      uint256 value = values[i];
+      _update(msg.sender, to, value);
+    }
   }
 
   function setVars(
@@ -749,20 +732,15 @@ contract MechAnime is ERC20, ERC20Burnable, Ownable {
     maxWallet = _maxWallet;
   }
 
-  function createLP(address _router) external onlyOwner {
-    router = IUniswapV2Router02(_router);
-    _approve(address(this), address(router), initialSupply);
-    pair = IUniswapV2Factory(router.factory()).createPair(
-      address(this),
-      router.WETH()
-    );
-    IERC20(pair).approve(address(router), type(uint).max);
+  function setPool(address _pool) external onlyOwner {
+    pool = _pool;
   }
 
   function startTrading() external onlyOwner {
-    if (!trading) {
-      trading = true;
+    if (pool == address(0)) {
+      revert("pool not set");
     }
+    trading = true;
   }
 
   receive() external payable {}
