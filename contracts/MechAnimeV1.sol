@@ -137,7 +137,7 @@ interface IUniswapV2Router02 {
   function WETH() external pure returns (address);
 }
 
-contract MechAnimeV5 is Context, IERC20, Ownable, ReentrancyGuard {
+contract MechAnimeV1 is Context, IERC20, Ownable, ReentrancyGuard {
   mapping(address => uint256) private _balances;
   mapping(address => mapping(address => uint256)) private _allowances;
   mapping(address => uint256) private _lastTxBlock;

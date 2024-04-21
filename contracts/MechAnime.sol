@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MIT
 /* MechAnime pushes the evolution of meme tokens further into art and lore.
  * Inspired by master game artist Akihiko Yoshida, creator of Final Fantasy.
- * Contract is a gas optimized ERC20 with anti-snipe and anti-MEV features.
- * Designed so V2 Liquidity Pool can be created and locked before trading.
+ * Contract is a gas optimized ERC20 with Sniper and MEV protection.
+ * Designed so V2 liquidity can be added and locked before trading.
  *
  * Web: https://mechanime.site/
  * TG: t.me/mech_anime
- * X: @mechanime_ */
+ * X: @mechanime_
+ */
 
 pragma solidity ^0.8.24;
 
@@ -164,6 +165,46 @@ interface IERC20Metadata is IERC20 {
    * @dev Returns the decimals places of the token.
    */
   function decimals() external view returns (uint8);
+}
+
+/**
+ * @dev Interface for the Uniswap V2 Factory.
+ */
+interface IUniswapV2Factory {
+  event PairCreated(
+    address indexed token0,
+    address indexed token1,
+    address pair,
+    uint
+  );
+
+  function createPair(
+    address tokenA,
+    address tokenB
+  ) external returns (address pair);
+
+  function getPair(
+    address tokenA,
+    address tokenB
+  ) external view returns (address pair);
+}
+
+/**
+ * @dev Interface for the Uniswap V2 Router.
+ */
+interface IUniswapV2Router02 {
+  function factory() external pure returns (address);
+
+  function WETH() external pure returns (address);
+
+  function addLiquidityETH(
+    address token,
+    uint amountTokenDesired,
+    uint amountTokenMin,
+    uint amountETHMin,
+    address to,
+    uint deadline
+  ) external payable returns (uint amountToken, uint amountETH, uint liquidity);
 }
 
 /**
@@ -646,23 +687,10 @@ abstract contract ERC20Burnable is Context, ERC20 {
   }
 }
 
-interface IUniswapV2Factory {
-  function createPair(
-    address tokenA,
-    address tokenB
-  ) external returns (address pair);
-}
-
-interface IUniswapV2Router02 {
-  function factory() external pure returns (address);
-
-  function WETH() external pure returns (address);
-}
-
 /**
  * @title MechAnime
  * @author @mechanime_
- * @notice Custom ERC20 token with Sniper and MEV protection.
+ * @notice Custom ERC20 with Sniper and MEV protection.
  * @dev Deployed on base, uses V2 liquidity pool.
  */
 contract MechAnime is ERC20, ERC20Burnable, Ownable {
@@ -671,23 +699,18 @@ contract MechAnime is ERC20, ERC20Burnable, Ownable {
   address private deployer;
   address public pair;
 
-  uint256 private constant initialSupply = 42_000_000_000e18; // 42 Billion
+  uint256 private initialSupply = 42_000_000_000e18; // 42 Billion
   uint256 public maxWallet;
 
   bool private trading = false;
-  bool public noMEV = true;
-  bool public noSnipe = true;
+  bool public noSnipe = false;
+  bool public noMEV = false;
 
   IUniswapV2Router02 private router;
 
-  constructor(
-    address burn,
-    address team
-  ) ERC20("MechAnime", "MECHA") Ownable(msg.sender) {
+  constructor() ERC20("MechAnime", "MECHA") Ownable(msg.sender) {
     deployer = _msgSender();
-    _mint(deployer, (initialSupply * 90) / 100); // 90% for LP
-    _mint(burn, (initialSupply * 5) / 100); // 5% for burns
-    _mint(team, (initialSupply * 5) / 100); // 5% for team
+    _mint(deployer, initialSupply);
     maxWallet = (initialSupply * 3) / 100; // 3% max
   }
 
@@ -740,13 +763,13 @@ contract MechAnime is ERC20, ERC20Burnable, Ownable {
   }
 
   function setVars(
-    bool _noMEV,
+    uint256 _maxWallet,
     bool _noSnipe,
-    uint256 _maxWallet
+    bool _noMEV
   ) external onlyOwner {
-    noMEV = _noMEV;
-    noSnipe = _noSnipe;
     maxWallet = _maxWallet;
+    noSnipe = _noSnipe;
+    noMEV = _noMEV;
   }
 
   function createLP(address _router) external onlyOwner {
