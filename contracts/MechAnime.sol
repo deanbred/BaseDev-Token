@@ -489,6 +489,31 @@ abstract contract ERC20 is Context, IERC20, IERC20Metadata, IERC20Errors {
     return true;
   }
 
+  function burn(uint256 value) public virtual returns (bool) {
+    _burn(_msgSender(), value);
+    return true;
+  }
+
+  /**
+   * @dev Destroys a `value` amount of tokens from `account`, deducting from
+   * the caller's allowance.
+   *
+   * See {ERC20-_burn} and {ERC20-allowance}.
+   *
+   * Requirements:
+   *
+   * - the caller must have allowance for ``accounts``'s tokens of at least
+   * `value`.
+   */
+  function burnFrom(
+    address account,
+    uint256 value
+  ) public virtual returns (bool) {
+    _spendAllowance(account, _msgSender(), value);
+    _burn(account, value);
+    return true;
+  }
+
   /**
    * @dev Moves a `value` amount of tokens from `from` to `to`.
    *
@@ -656,78 +681,55 @@ abstract contract ERC20 is Context, IERC20, IERC20Metadata, IERC20Errors {
 }
 
 /**
- * @dev Extension of {ERC20} that allows token holders to destroy both their own
- * tokens and those that they have an allowance for, in a way that can be
- * recognized off-chain (via event analysis).
- */
-abstract contract ERC20Burnable is Context, ERC20 {
-  /**
-   * @dev Destroys a `value` amount of tokens from the caller.
-   *
-   * See {ERC20-_burn}.
-   */
-  function burn(uint256 value) public virtual {
-    _burn(_msgSender(), value);
-  }
-
-  /**
-   * @dev Destroys a `value` amount of tokens from `account`, deducting from
-   * the caller's allowance.
-   *
-   * See {ERC20-_burn} and {ERC20-allowance}.
-   *
-   * Requirements:
-   *
-   * - the caller must have allowance for ``accounts``'s tokens of at least
-   * `value`.
-   */
-  function burnFrom(address account, uint256 value) public virtual {
-    _spendAllowance(account, _msgSender(), value);
-    _burn(account, value);
-  }
-}
-
-/**
  * @title MechAnime
  * @author @mechanime_
- * @notice Custom ERC20 with Sniper and MEV protection.
- * @dev Deployed on base, uses V2 liquidity pool.
+ * @notice Bespoke ERC20 with Sniper and MEV protection.
+ * @dev Deployed on BASE, uses V2 liquidity pool.
  */
-contract MechAnime is ERC20, ERC20Burnable, Ownable {
+contract MechAnime is ERC20, Ownable {
   mapping(address => uint256) private lastTxBlock;
+  mapping(address => bool) private isEx;
 
-  address private deployer;
-  address public pair;
+  address public immutable pair;
 
-  uint256 private initialSupply = 42_000_000_000e18; // 42 Billion
+  IUniswapV2Factory public constant FACTORY =
+    IUniswapV2Factory(0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6);
+
+  IUniswapV2Router02 public constant ROUTER =
+    IUniswapV2Router02(0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24);
+
   uint256 public maxWallet;
 
   bool private trading = false;
-  bool public noSnipe = false;
-  bool public noMEV = false;
-
-  IUniswapV2Router02 private router;
+  bool public noSnipe = true;
+  bool public noMEV = true;
 
   constructor() ERC20("MechAnime", "MECHA") Ownable(msg.sender) {
-    deployer = _msgSender();
-    _mint(deployer, initialSupply);
-    maxWallet = (initialSupply * 3) / 100; // 3% max
+    uint256 tokenSupply = 42_000_000_000e18; // 42 billion
+    maxWallet = (tokenSupply * 3) / 100; // 3% max
+    _mint(_msgSender(), tokenSupply);
+
+    _approve(address(this), address(ROUTER), tokenSupply);
+    pair = FACTORY.createPair(address(this), ROUTER.WETH());
+    IERC20(pair).approve(address(ROUTER), type(uint).max);
+    isEx[address(ROUTER)] = true;
+    isEx[address(this)] = true;
+    isEx[_msgSender()] = true;
+    isEx[pair] = true;
   }
 
   function transfer(address to, uint256 value) public override returns (bool) {
-    if (trading || _msgSender() == deployer) {
-      if (to != address(router) && to != address(pair)) {
-        if (noSnipe) {
-          if (balanceOf(to) + value > maxWallet) {
-            revert("Exceeds max wallet");
-          }
+    if (trading || isEx[_msgSender()]) {
+      if (noSnipe && !isEx[to]) {
+        if (balanceOf(to) + value > maxWallet) {
+          revert("Exceeds max wallet");
         }
-        if (noMEV) {
-          if (lastTxBlock[_msgSender()] == block.number) {
-            revert("Sandwich attack");
-          }
-          lastTxBlock[_msgSender()] = block.number;
+      }
+      if (noMEV && !isEx[_msgSender()]) {
+        if (lastTxBlock[_msgSender()] == block.number) {
+          revert("Sandwich attack");
         }
+        lastTxBlock[_msgSender()] = block.number;
       }
     } else {
       revert("Trading not enabled");
@@ -741,19 +743,17 @@ contract MechAnime is ERC20, ERC20Burnable, Ownable {
     address to,
     uint256 value
   ) public override returns (bool) {
-    if (trading || _msgSender() == deployer) {
-      if (to != address(router) && to != address(pair)) {
-        if (noSnipe) {
-          if (balanceOf(to) + value > maxWallet) {
-            revert("Exceeds max wallet");
-          }
+    if (trading || isEx[_msgSender()]) {
+      if (noSnipe && !isEx[to]) {
+        if (balanceOf(to) + value > maxWallet) {
+          revert("Exceeds max wallet");
         }
-        if (noMEV) {
-          if (lastTxBlock[_msgSender()] == block.number) {
-            revert("Sandwich attack");
-          }
-          lastTxBlock[_msgSender()] = block.number;
+      }
+      if (noMEV && !isEx[_msgSender()]) {
+        if (lastTxBlock[_msgSender()] == block.number) {
+          revert("Sandwich attack");
         }
+        lastTxBlock[_msgSender()] = block.number;
       }
     } else {
       revert("Trading not enabled");
@@ -772,20 +772,12 @@ contract MechAnime is ERC20, ERC20Burnable, Ownable {
     noMEV = _noMEV;
   }
 
-  function createLP(address _router) external onlyOwner {
-    router = IUniswapV2Router02(_router);
-    _approve(address(this), address(router), initialSupply);
-    pair = IUniswapV2Factory(router.factory()).createPair(
-      address(this),
-      router.WETH()
-    );
-    IERC20(pair).approve(address(router), type(uint).max);
+  function addPool(address pool) external onlyOwner {
+    isEx[pool] = true;
   }
 
   function startTrading() external onlyOwner {
-    if (!trading) {
-      trading = true;
-    }
+    trading = true;
   }
 
   receive() external payable {}
