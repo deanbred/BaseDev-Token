@@ -766,7 +766,7 @@ contract MechAnime is ERC20, Ownable, ReentrancyGuard {
   uint256 public maxWallet;
   bool private trading = false;
   bool public noSnipe = true;
-  bool public noMEV = true;
+  bool public noMEV = false;
 
   constructor() ERC20("MechAnime", "MECHA") Ownable(msg.sender) {
     uint256 tokenSupply = 42_000_000_000e18; // 42 billion
