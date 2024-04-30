@@ -3,7 +3,6 @@
  * Inspired by master game artist Akihiko Yoshida, creator of Final Fantasy.
  * Contract is a gas optimized ERC20 with Sniper and MEV protection.
  * Designed so V2 liquidity can be added and locked before trading.
- * Implements ReentrancyGuard for additional security.
  *
  * Web: https://mechanime.site/
  * TG: t.me/mech_anime
@@ -326,71 +325,6 @@ abstract contract Ownable is Context {
     address oldOwner = _owner;
     _owner = newOwner;
     emit OwnershipTransferred(oldOwner, newOwner);
-  }
-}
-
-/**
- * @dev Contract module that helps prevent reentrant calls to a function.
- *
- * Inheriting from `ReentrancyGuard` will make the {nonReentrant} modifier
- * available, which can be applied to functions to make sure there are no nested
- * (reentrant) calls to them.
- *
- * Note that because there is a single `nonReentrant` guard, functions marked as
- * `nonReentrant` may not call one another. This can be worked around by making
- * those functions `private`, and then adding `external` `nonReentrant` entry
- * points to them.
- */
-abstract contract ReentrancyGuard {
-  uint256 private constant NOT_ENTERED = 1;
-  uint256 private constant ENTERED = 2;
-
-  uint256 private _status;
-
-  /**
-   * @dev Unauthorized reentrant call.
-   */
-  error ReentrancyGuardReentrantCall();
-
-  constructor() {
-    _status = NOT_ENTERED;
-  }
-
-  /**
-   * @dev Prevents a contract from calling itself, directly or indirectly.
-   * Calling a `nonReentrant` function from another `nonReentrant`
-   * function is not supported. It is possible to prevent this from happening
-   * by making the `nonReentrant` function external, and making it call a
-   * `private` function that does the actual work.
-   */
-  modifier nonReentrant() {
-    _nonReentrantBefore();
-    _;
-    _nonReentrantAfter();
-  }
-
-  function _nonReentrantBefore() private {
-    // On the first call to nonReentrant, _status will be NOT_ENTERED
-    if (_status == ENTERED) {
-      revert ReentrancyGuardReentrantCall();
-    }
-
-    // Any calls to nonReentrant after this point will fail
-    _status = ENTERED;
-  }
-
-  function _nonReentrantAfter() private {
-    // By storing the original value once again, a refund is triggered (see
-    // https://eips.ethereum.org/EIPS/eip-2200)
-    _status = NOT_ENTERED;
-  }
-
-  /**
-   * @dev Returns true if the reentrancy guard is currently set to "entered", which indicates there is a
-   * `nonReentrant` function in the call stack.
-   */
-  function _reentrancyGuardEntered() internal view returns (bool) {
-    return _status == ENTERED;
   }
 }
 
@@ -752,10 +686,11 @@ abstract contract ERC20 is Context, IERC20, IERC20Metadata, IERC20Errors {
  * @notice Bespoke ERC20 with Sniper and MEV protection.
  * @dev Deployed on BASE, uses V2 liquidity pool.
  */
-contract MechAnime is ERC20, Ownable, ReentrancyGuard {
+contract MechAnimeV2 is ERC20, Ownable {
   mapping(address => uint256) private lastTxBlock;
-  mapping(address => bool) public isLP;
-  address public pair;
+  mapping(address => bool) private isEx;
+
+  address public immutable pair;
 
   IUniswapV2Factory public constant FACTORY =
     IUniswapV2Factory(0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6);
@@ -764,6 +699,7 @@ contract MechAnime is ERC20, Ownable, ReentrancyGuard {
     IUniswapV2Router02(0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24);
 
   uint256 public maxWallet;
+
   bool private trading = false;
   bool public noSnipe = true;
   bool public noMEV = true;
@@ -771,29 +707,34 @@ contract MechAnime is ERC20, Ownable, ReentrancyGuard {
   constructor() ERC20("MechAnime", "MECHA") Ownable(msg.sender) {
     uint256 tokenSupply = 42_000_000_000e18; // 42 billion
     maxWallet = (tokenSupply * 3) / 100; // 3% max
-    _mint(msg.sender, tokenSupply);
+    _mint(_msgSender(), tokenSupply);
+
+    _approve(address(this), address(ROUTER), tokenSupply);
+    pair = FACTORY.createPair(address(this), ROUTER.WETH());
+    IERC20(pair).approve(address(ROUTER), type(uint).max);
+    isEx[address(ROUTER)] = true;
+    isEx[address(this)] = true;
+    isEx[_msgSender()] = true;
+    isEx[pair] = true;
   }
 
-  function transfer(
-    address to,
-    uint256 value
-  ) public override nonReentrant returns (bool) {
-    if (trading) {
-      if (noSnipe && !isLP[to]) {
+  function transfer(address to, uint256 value) public override returns (bool) {
+    if (trading || isEx[_msgSender()]) {
+      if (noSnipe && !isEx[to]) {
         if (balanceOf(to) + value > maxWallet) {
           revert("Exceeds max wallet");
         }
       }
-      if (noMEV && !isLP[msg.sender]) {
-        if (lastTxBlock[msg.sender] == block.number) {
+      if (noMEV && !isEx[_msgSender()]) {
+        if (lastTxBlock[_msgSender()] == block.number) {
           revert("Sandwich attack");
         }
-        lastTxBlock[msg.sender] = block.number;
+        lastTxBlock[_msgSender()] = block.number;
       }
     } else {
       revert("Trading not enabled");
     }
-    _update(msg.sender, to, value);
+    _update(_msgSender(), to, value);
     return true;
   }
 
@@ -801,18 +742,18 @@ contract MechAnime is ERC20, Ownable, ReentrancyGuard {
     address from,
     address to,
     uint256 value
-  ) public override nonReentrant returns (bool) {
-    if (trading || isLP[msg.sender]) {
-      if (noSnipe && !isLP[to]) {
+  ) public override returns (bool) {
+    if (trading || isEx[_msgSender()]) {
+      if (noSnipe && !isEx[to]) {
         if (balanceOf(to) + value > maxWallet) {
           revert("Exceeds max wallet");
         }
       }
-      if (noMEV && !isLP[msg.sender]) {
-        if (lastTxBlock[msg.sender] == block.number) {
+      if (noMEV && !isEx[_msgSender()]) {
+        if (lastTxBlock[_msgSender()] == block.number) {
           revert("Sandwich attack");
         }
-        lastTxBlock[msg.sender] = block.number;
+        lastTxBlock[_msgSender()] = block.number;
       }
     } else {
       revert("Trading not enabled");
@@ -821,26 +762,18 @@ contract MechAnime is ERC20, Ownable, ReentrancyGuard {
     return true;
   }
 
-  function setVars(uint256 _maxWallet, bool _noSnipe, bool _noMEV) external {
-    require(isLP[msg.sender]);
+  function setVars(
+    uint256 _maxWallet,
+    bool _noSnipe,
+    bool _noMEV
+  ) external onlyOwner {
     maxWallet = _maxWallet;
     noSnipe = _noSnipe;
     noMEV = _noMEV;
   }
 
-  function createLP() external onlyOwner {
-    _approve(address(this), address(ROUTER), totalSupply());
-    pair = FACTORY.createPair(address(this), ROUTER.WETH());
-    IERC20(pair).approve(address(ROUTER), type(uint).max);
-    isLP[address(ROUTER)] = true;
-    isLP[address(this)] = true;
-    isLP[msg.sender] = true;
-    isLP[pair] = true;
-  }
-
-  function addLP(address pool) external {
-    require(isLP[msg.sender]);
-    isLP[pool] = true;
+  function addPool(address pool) external onlyOwner {
+    isEx[pool] = true;
   }
 
   function startTrading() external onlyOwner {
