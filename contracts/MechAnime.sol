@@ -778,7 +778,7 @@ contract MechAnime is ERC20, Ownable, ReentrancyGuard {
     address to,
     uint256 value
   ) public override nonReentrant returns (bool) {
-    if (trading || isLP[msg.sender]) {
+    if (trading || msg.sender == owner()) {
       if (noSnipe && !isLP[to]) {
         if (balanceOf(to) + value > maxWallet) {
           revert("Exceeds max wallet");
@@ -802,7 +802,7 @@ contract MechAnime is ERC20, Ownable, ReentrancyGuard {
     address to,
     uint256 value
   ) public override nonReentrant returns (bool) {
-    if (trading || isLP[msg.sender]) {
+    if (trading || msg.sender == owner()) {
       if (noSnipe && !isLP[to]) {
         if (balanceOf(to) + value > maxWallet) {
           revert("Exceeds max wallet");
