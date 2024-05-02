@@ -771,29 +771,29 @@ contract MechAnime is ERC20, Ownable, ReentrancyGuard {
   constructor() ERC20("MechAnime", "MECHA") Ownable(msg.sender) {
     uint256 tokenSupply = 4_200_000_000e18; // 4.2 billion
     maxWallet = (tokenSupply * 3) / 100; // 3% max
-    _mint(msg.sender, tokenSupply);
+    _mint(_msgSender(), tokenSupply);
   }
 
   function transfer(
     address to,
     uint256 value
   ) public override nonReentrant returns (bool) {
-    if (trading || msg.sender == owner()) {
+    if (trading || _msgSender() == owner()) {
       if (noSnipe && !isLP[to]) {
         if (balanceOf(to) + value > maxWallet) {
           revert("Exceeds max wallet");
         }
       }
-      if (noMEV && !isLP[msg.sender]) {
-        if (lastTxBlock[msg.sender] == block.number) {
+      if (noMEV && !isLP[_msgSender()]) {
+        if (lastTxBlock[_msgSender()] == block.number) {
           revert("Sandwich attack");
         }
-        lastTxBlock[msg.sender] = block.number;
+        lastTxBlock[_msgSender()] = block.number;
       }
     } else {
       revert("Trading not enabled");
     }
-    _update(msg.sender, to, value);
+    _update(_msgSender(), to, value);
     return true;
   }
 
@@ -802,17 +802,17 @@ contract MechAnime is ERC20, Ownable, ReentrancyGuard {
     address to,
     uint256 value
   ) public override nonReentrant returns (bool) {
-    if (trading || msg.sender == owner()) {
+    if (trading || _msgSender() == owner()) {
       if (noSnipe && !isLP[to]) {
         if (balanceOf(to) + value > maxWallet) {
           revert("Exceeds max wallet");
         }
       }
-      if (noMEV && !isLP[msg.sender]) {
-        if (lastTxBlock[msg.sender] == block.number) {
+      if (noMEV && !isLP[_msgSender()]) {
+        if (lastTxBlock[_msgSender()] == block.number) {
           revert("Sandwich attack");
         }
-        lastTxBlock[msg.sender] = block.number;
+        lastTxBlock[_msgSender()] = block.number;
       }
     } else {
       revert("Trading not enabled");
@@ -822,7 +822,7 @@ contract MechAnime is ERC20, Ownable, ReentrancyGuard {
   }
 
   function setVars(uint256 _maxWallet, bool _noSnipe, bool _noMEV) external {
-    require(isLP[msg.sender]);
+    require(isLP[_msgSender()]);
     maxWallet = _maxWallet;
     noSnipe = _noSnipe;
     noMEV = _noMEV;
@@ -834,12 +834,12 @@ contract MechAnime is ERC20, Ownable, ReentrancyGuard {
     IERC20(pair).approve(address(ROUTER), type(uint).max);
     isLP[address(ROUTER)] = true;
     isLP[address(this)] = true;
-    isLP[msg.sender] = true;
+    isLP[_msgSender()] = true;
     isLP[pair] = true;
   }
 
   function addLP(address pool) external {
-    require(isLP[msg.sender]);
+    require(isLP[_msgSender()]);
     isLP[pool] = true;
   }
 
