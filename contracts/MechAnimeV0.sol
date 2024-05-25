@@ -293,7 +293,7 @@ contract MechAnimeV0 is ERC20, Owned {
 
   function renounceOwnership() external onlyOwner {
     require(tradingEnabled);
-    restrictionEndTimestamp = block.timestamp + 60 hours;
+    restrictionEndTimestamp = block.timestamp + 4 hours;
     transferOwnership(address(0));
   }
 
